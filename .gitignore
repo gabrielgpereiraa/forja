@@ -1,0 +1,17 @@
+# Dependências e build
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Sistema / editor
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Arquivos gerados pelo Claude (capturas de tela)
+Claude outputs/
+
+# Ambiente
+.env
+.env.*
