@@ -5,6 +5,7 @@ import { MotionConfig } from 'motion/react'
 import { Toaster } from '@/components/ui/sonner'
 import { useApplyTheme } from '@/hooks/use-theme'
 import { useAppStore } from '@/store/app-store'
+import { AuthGate } from '@/features/auth/AuthGate'
 import { OnboardingPage } from '@/features/onboarding/OnboardingPage'
 import { TodayPage } from '@/features/today/TodayPage'
 import { AppShell } from './AppShell'
@@ -22,6 +23,7 @@ export function App() {
 
   return (
     <MotionConfig reducedMotion="user">
+      <AuthGate>
       <BrowserRouter>
         {onboarded ? (
           <Routes>
@@ -39,6 +41,7 @@ export function App() {
           <OnboardingPage />
         )}
       </BrowserRouter>
+      </AuthGate>
       <Toaster />
     </MotionConfig>
   )

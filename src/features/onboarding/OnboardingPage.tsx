@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useToday } from '@/hooks/use-today'
 import { useAppStore } from '@/store/app-store'
+import { useSession } from '@/features/auth/session'
 
 const PILLARS = [
   { icon: Repeat, title: 'Hábitos', text: 'Compromissos recorrentes, medidos pela frequência da semana — não precisa ser todo dia.' },
@@ -17,7 +18,8 @@ const PILLARS = [
 export function OnboardingPage() {
   const today = useToday()
   const complete = useAppStore((s) => s.completeOnboarding)
-  const [name, setName] = useState('')
+  const googleName = useSession((s) => s.user?.name?.split(' ')[0] ?? '')
+  const [name, setName] = useState(googleName)
   const valid = name.trim().length > 0
 
   return (

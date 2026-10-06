@@ -24,11 +24,15 @@ npm run dev        # http://localhost:5180
 
 No primeiro acesso, escolha **Explorar com dados de exemplo** para ver ~5 semanas simuladas (histórico, sequência, conquistas) ou **Começar** para partir do zero. Em *Perfil → Ajustes* dá para trocar tema, exportar/importar backup JSON, recarregar os exemplos ou apagar tudo.
 
-Os dados ficam no `localStorage` do navegador (chave `forja.data`). Nada é enviado para servidores.
+### Contas e nuvem
+
+Com as variáveis do Supabase definidas (copie `.env.example` para `.env.local`), o app exige **login com Google** e sincroniza os dados com o Supabase — local-first: funciona offline e envia quando a conexão volta. Sem elas, roda em **modo local** (dados só no `localStorage`, como na v1). No primeiro login, se houver dados da versão sem conta no navegador, o app oferece importá-los.
+
+O schema do banco (tabelas + Row Level Security) está em `supabase/migrations/`. Detalhes em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#6c-contas-e-nuvem-supabase--google).
 
 ## Stack
 
-React 19 · TypeScript (strict + `noUncheckedIndexedAccess`) · Vite · Tailwind CSS v4 · shadcn/ui (Radix) · Zustand · React Router · date-fns · motion · Vitest.
+React 19 · Supabase (Auth + Postgres) · TypeScript (strict + `noUncheckedIndexedAccess`) · Vite · Tailwind CSS v4 · shadcn/ui (Radix) · Zustand · React Router · date-fns · motion · Vitest.
 
 Os componentes base do shadcn/ui estão em `src/components/ui` (`components.json` configurado — `npx shadcn add <componente>` funciona normalmente).
 

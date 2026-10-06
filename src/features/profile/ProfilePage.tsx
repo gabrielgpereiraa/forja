@@ -49,6 +49,8 @@ import { useToday } from '@/hooks/use-today'
 import { cn, formatNumber } from '@/lib/utils'
 import type { AppData, ThemePreference } from '@/services/app-data'
 import { exportData, useAppStore } from '@/store/app-store'
+import { AccountCard } from '@/features/auth/AccountCard'
+import { cloudEnabled } from '@/lib/supabase'
 
 const ATTRIBUTE_ICON: Record<AttributeId, LucideIcon> = {
   vitality: HeartPulse,
@@ -276,6 +278,12 @@ export function ProfilePage() {
         )}
       </section>
 
+      {/* Conta */}
+      <section className="mt-6">
+        <h2 className="mb-2.5 px-1 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase">Conta</h2>
+        <AccountCard />
+      </section>
+
       {/* Ajustes */}
       <section className="mt-6 space-y-2">
         <h2 className="mb-2.5 px-1 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase">Ajustes</h2>
@@ -340,7 +348,7 @@ export function ProfilePage() {
           </div>
         </Surface>
         <p className="px-1 pt-2 text-[12px] text-muted-foreground/70">
-          Dados salvos apenas neste dispositivo · {CURRENT_SCORING.label}
+          {cloudEnabled ? 'Dados salvos na sua conta' : 'Dados salvos apenas neste dispositivo'} · {CURRENT_SCORING.label}
         </p>
       </section>
 
@@ -351,7 +359,7 @@ export function ProfilePage() {
             <AlertDialogDescription>
               {confirm === 'demo'
                 ? 'Seus hábitos, tarefas e histórico atuais serão substituídos por ~5 semanas simuladas. Exporte antes se quiser guardar.'
-                : 'Hábitos, tarefas, histórico, XP e conquistas serão removidos deste dispositivo. Isso não pode ser desfeito.'}
+                : `Hábitos, tarefas, histórico, XP e conquistas serão removidos ${cloudEnabled ? 'da sua conta, em todos os aparelhos' : 'deste dispositivo'}. Isso não pode ser desfeito.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -16,7 +16,12 @@ import * as cmd from '@/services/commands'
 import * as skills from '@/services/skill-commands'
 import type { LinkInput, PracticeInput } from '@/services/skill-commands'
 import { buildDemoData } from '@/services/demo-seed'
-import { createLocalStorageAdapter, STORAGE_KEY } from '@/services/storage'
+import { cloudEnabled } from '@/lib/supabase'
+import { createLocalStorageAdapter, createScopedStorage, STORAGE_KEY } from '@/services/storage'
+
+const scopedStorage = createScopedStorage(createLocalStorageAdapter())
+// Com conta, nada é lido/gravado até o login definir o escopo do usuário.
+scopedStorage.paused = cloudEnabled
 
 export interface AppActions {
   completeOnboarding: (name: string, today: ISODate, withDemo: boolean) => void
@@ -140,7 +145,8 @@ export const useAppStore = create<AppState>()(
     {
       name: STORAGE_KEY,
       version: SCHEMA_VERSION,
-      storage: createJSONStorage(() => createLocalStorageAdapter()),
+      storage: createJSONStorage(() => scopedStorage),
+      skipHydration: cloudEnabled,
       partialize: (s) => dataOf(s),
       migrate: (persisted, version) => migrateData(persisted, version) as unknown as AppState,
     },
@@ -149,4 +155,37 @@ export const useAppStore = create<AppState>()(
 
 export function exportData(): AppData {
   return dataOf(useAppStore.getState())
+}
+
+export function getAppData(): AppData {
+  return dataOf(useAppStore.getState())
+}
+
+/** Substitui o estado sem passar pelas ações (usado pela sincronização). */
+export function setAppData(data: AppData): void {
+  useAppStore.setState(data)
+}
+
+/** Assina mudanças do AppData (estado anterior e novo). */
+export function subscribeAppData(listener: (next: AppData, prev: AppData) => void): () => void {
+  return useAppStore.subscribe((state, prev) => listener(dataOf(state), dataOf(prev)))
+}
+
+/**
+ * Troca o "dono" do estado local: limpa a memória, aponta o armazenamento
+ * para a chave do usuário e reidrata o cache dele. `null` = ninguém logado
+ * (estado vazio e escrita pausada).
+ */
+export async function switchDataScope(userId: string | null): Promise<void> {
+  scopedStorage.paused = true
+  useAppStore.setState(createEmptyData())
+  scopedStorage.scope = userId
+  if (!userId) return
+  scopedStorage.paused = false
+  await useAppStore.persist.rehydrate()
+}
+
+/** Apaga o cache local do usuário atual (ao sair da conta). */
+export function clearScopedCache(): void {
+  scopedStorage.removeItem(STORAGE_KEY)
 }

@@ -58,3 +58,39 @@ export function createLocalStorageAdapter(): StorageAdapter {
 }
 
 export const STORAGE_KEY = 'forja.data'
+
+/**
+ * Armazenamento com escopo por usuário (`forja.data.<userId>`) e pausa de
+ * escrita — usado para trocar de conta sem que o estado de uma vaze para a
+ * chave da outra.
+ */
+export interface ScopedStorage extends StorageAdapter {
+  scope: string | null
+  paused: boolean
+}
+
+export function createScopedStorage(inner: StorageAdapter): ScopedStorage {
+  const s: ScopedStorage = {
+    kind: `scoped:${inner.kind}`,
+    scope: null,
+    paused: false,
+    getItem: (k) => inner.getItem(s.scope ? `${k}.${s.scope}` : k),
+    setItem: (k, v) => {
+      if (!s.paused) return inner.setItem(s.scope ? `${k}.${s.scope}` : k, v)
+    },
+    removeItem: (k) => inner.removeItem(s.scope ? `${k}.${s.scope}` : k),
+  }
+  return s
+}
+
+/** Lê os dados salvos sem conta (v1) neste navegador, se houver. */
+export function readLegacyData(storage: StorageAdapter): { state: unknown; version: number } | null {
+  try {
+    const raw = storage.getItem(STORAGE_KEY) as string | null
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { state?: unknown; version?: number }
+    return parsed.state ? { state: parsed.state, version: parsed.version ?? 0 } : null
+  } catch {
+    return null
+  }
+}

@@ -21,7 +21,8 @@ src/
 ├── services/               camada de aplicação
 │   ├── commands.ts         comandos puros (data, args) → { data, feedback }
 │   ├── app-data.ts         formato persistido + migrações
-│   ├── storage.ts          StorageAdapter (localStorage c/ fallback em memória)
+│   ├── storage.ts          StorageAdapter (localStorage c/ fallback em memória, escopo por usuário)
+│   ├── sync/               sincronização local-first com o Supabase (ver §6c)
 │   └── demo-seed.ts        dados de exemplo gerados pelos MESMOS comandos
 ├── store/                  Zustand: app-store (persistido) e ui-store (modais)
 ├── hooks/                  leitura memoizada do domínio (useDayOverview, usePlayer…)
@@ -168,6 +169,39 @@ Todos os números (tolerância, fases, taxas, resistências, ganhos, curva de n�
 ### Interface
 
 Aba **Habilidades** (bigorna) com cards — nível, condição com marca do piso, estado, sessões em 7 dias, última prática e "+ Prática" (sheet com 15/30/45/60/personalizado em um toque). A ferrugem é visual e sutil (`--rust` no card: menos saturação, barra puxando para o cobre, pátina no canto). Detalhe com nível/condição/maestria lado a lado, explicação do estado ("por que" e "o que fazer"), gráfico de 30 dias com o piso, tendência semanal, hábitos que treinam e práticas recentes. No Hoje, no máximo um aviso gentil por dia ("Guitarra está começando a enferrujar…"). Feedback de prática no toast ("Guitarra +4% condição · Nv 4 · +18 XP", "Recuperando…", "Novo nível!"). No celular o Perfil fica no avatar do topo.
+
+## 6c. Contas e nuvem (Supabase + Google)
+
+**Peças:** Supabase Auth (provedor Google, fluxo PKCE) · Postgres com Row Level Security · app estático na Vercel. Sem `VITE_SUPABASE_*` no ambiente o app roda no **modo local** da v1 (útil para dev/testes).
+
+### Banco (`supabase/migrations/0001_init.sql`)
+Uma tabela por tipo de entidade — `profiles` (perfil + ajustes, id `main`), `habits`, `habit_logs`, `tasks`, `day_records` (id = data), `ledger_entries`, `achievements`, `skills`, `skill_practices`, `skill_links` (id = `habitId:skillId`) — todas com o mesmo formato:
+
+| coluna | papel |
+| --- | --- |
+| `user_id` | dono (FK `auth.users`, `on delete cascade`) |
+| `id` | id da entidade no app |
+| `data` | o objeto do domínio, exatamente como no app (jsonb) |
+| `updated_at` | definido pelo servidor (trigger) — cursor da sincronização |
+| `deleted_at` | exclusão lógica, para propagar entre aparelhos |
+
+RLS em todas: `select/insert/update/delete` só quando `auth.uid() = user_id`; `anon` sem acesso. A chave *publishable* no site é pública por design.
+
+> Por que `data jsonb` e não colunas? O domínio evolui rápido (metas versionadas, habilidades…). Guardar o objeto inteiro evita uma migração de banco a cada campo novo — as migrações continuam no app (`migrateData`). Se um dia houver relatórios no servidor, dá para criar colunas geradas/visões sobre o jsonb.
+
+### Sincronização (`services/sync/`)
+- `collections.ts` (puro): `diffData(prev, next)` compara por **referência** (os comandos são imutáveis) e gera mudanças por entidade; `applyRows` aplica linhas recebidas sem recriar o estado quando nada muda.
+- `engine.ts` — `SyncEngine`: observa o store, põe mudanças numa **caixa de saída persistida** (`forja.sync.<uid>.outbox`), envia em lote (upsert) com *retry* exponencial; baixa por cursor `updated_at` (com 60 s de folga) a cada 2 min, ao voltar ao app e ao reconectar. Entidade com envio pendente mantém a versão local. Conflito: última escrita que chega ao servidor vence, por entidade.
+- `supabase-remote.ts`: implementação do `RemoteStore` (paginação de 1000, lotes de 400).
+- O motor não conhece React nem Supabase — os testes usam um servidor em memória com dois "aparelhos".
+
+### Sessão (`features/auth/`)
+`AuthGate` → sem sessão: `LoginPage` · com sessão: aponta o store para `forja.data.<uid>` (`switchDataScope`), faz a primeira carga e libera o app. Aparelho novo sem resposta do servidor → tela "tentar de novo" (nunca começa do zero por cima da nuvem). Conta vazia + dados da v1 neste navegador → `ImportPrompt`. Sair: envia o pendente (avisa se não conseguir) e apaga o cache local daquela conta. `/privacidade` e `/termos` são públicas (exigidas pela tela de consentimento do Google).
+
+### Configuração (contas pessoais, fora da NX)
+- **Supabase:** projeto `forja-habits-tracker` (org gabrielgpereiraa, us-west-2). Auth → Google habilitado; URL Configuration com o domínio da Vercel e `http://localhost:5180`.
+- **Google Cloud:** projeto `Forja` (`forja-510812`, conta gabrielg.pereira@outlook.com), público Externo, escopos básicos (`openid email profile`), cliente Web com redirect `https://<ref>.supabase.co/auth/v1/callback`.
+- **Vercel:** importa `gabrielgpereiraa/forja`; variáveis `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`; `vercel.json` reescreve rotas para o SPA.
 
 ## 7. Estados cobertos
 
