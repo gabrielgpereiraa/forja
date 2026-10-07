@@ -8,7 +8,9 @@ import { EmptyState, SectionHeader, Surface } from '@/components/layout'
 import { HabitGlyph } from '@/components/appearance'
 import { Button } from '@/components/ui/button'
 import { addDays, capitalize, formatDate } from '@/domain/date'
-import { useDayOverview, usePendingReview, usePlayer, useStreak } from '@/hooks/use-domain'
+import { eligibleLateHabitIds } from '@/domain/rules/late-confirmation'
+import type { HabitDayState } from '@/domain/rules/habit-schedule'
+import { useDayOverview, useLateConfirmation, usePendingReview, usePlayer, useStreak } from '@/hooks/use-domain'
 import { useToday } from '@/hooks/use-today'
 import { cn, formatNumber } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
@@ -22,6 +24,7 @@ import { lateLabel } from '@/features/tasks/task-format'
 import { ClosedDayCard } from './ClosedDayCard'
 import { CompleteDayModal } from './CompleteDayModal'
 import { DayHero } from './DayHero'
+import { LateConfirmationCard } from './LateConfirmationCard'
 import { YesterdayReview } from './YesterdayReview'
 
 function greeting(date = new Date()): string {
@@ -32,12 +35,21 @@ function greeting(date = new Date()): string {
 }
 
 const DISMISS_KEY = 'forja.ui.streakBannerDismissed'
+const LATE_DISMISS_KEY = 'forja.ui.lateConfirmDismissed'
 
-function readDismissed(): string | null {
+function readDismissed(key = DISMISS_KEY): string | null {
   try {
-    return window.localStorage.getItem(DISMISS_KEY)
+    return window.localStorage.getItem(key)
   } catch {
     return null
+  }
+}
+
+function writeDismissed(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    /* armazenamento indisponível */
   }
 }
 
@@ -59,8 +71,21 @@ export function TodayPage() {
   const [completeOpen, setCompleteOpen] = useState(false)
   const [showOptional, setShowOptional] = useState(false)
   const [dismissed, setDismissed] = useState(readDismissed)
+  const late = useLateConfirmation(today)
+  const [lateDismissed, setLateDismissed] = useState(() => readDismissed(LATE_DISMISS_KEY))
+  // O cartão aparece enquanto há algo a confirmar; depois de aberto, fica até o
+  // fim da visita (para mostrar "Confirmado" e permitir desfazer).
+  const [lateSeen, setLateSeen] = useState<string | null>(null)
+  const latePending = late?.pending.size ?? 0
+  if (late && latePending > 0 && lateSeen !== late.date) setLateSeen(late.date)
+  const showLate = Boolean(late && lateDismissed !== late.date && (latePending > 0 || lateSeen === late.date))
 
   const closed = overview.phase === 'closed'
+  const allHabits = useAppStore((s) => s.habits)
+  // Encerrado: só os que ficaram na lista do encerramento podem ser confirmados amanhã.
+  const lateEligible = overview.record ? new Set(eligibleLateHabitIds(overview.record, allHabits)) : null
+  const awaitsConfirmation = (st: HabitDayState) =>
+    !st.doneToday && (lateEligible ? lateEligible.has(st.habit.id) : Boolean(st.habit.confirmNextDay))
   const score = overview.breakdown.score
   const showBrokenBanner = streak.status === 'broken' && dismissed !== today
   const optionalDone = overview.optionalHabits.filter((h) => h.doneToday).length
@@ -83,9 +108,24 @@ export function TodayPage() {
 
       {pendingReview && <YesterdayReview overview={pendingReview} onComplete={() => setYesterdayOpen(true)} />}
 
+      {!pendingReview && late && showLate && (
+        <LateConfirmationCard
+          key={late.date}
+          date={late.date}
+          today={today}
+          record={late.record}
+          states={late.states}
+          confirmed={late.confirmed}
+          onDismiss={() => {
+            setLateDismissed(late.date)
+            writeDismissed(LATE_DISMISS_KEY, late.date)
+          }}
+        />
+      )}
+
       {!showBrokenBanner && <SkillRustBanner today={today} />}
 
-      {showBrokenBanner && !pendingReview && (
+      {showBrokenBanner && !pendingReview && !showLate && (
         <div className="mb-4 flex items-start gap-3 rounded-2xl border border-xp/20 bg-xp/8 p-3.5 animate-rise">
           <Flame className="mt-0.5 size-4 shrink-0 text-xp" />
           <div className="min-w-0 flex-1 text-[13px]">
@@ -98,11 +138,7 @@ export function TodayPage() {
             aria-label="Dispensar aviso"
             onClick={() => {
               setDismissed(today)
-              try {
-                window.localStorage.setItem(DISMISS_KEY, today)
-              } catch {
-                /* armazenamento indisponível */
-              }
+              writeDismissed(DISMISS_KEY, today)
             }}
           >
             <X className="size-4" />
@@ -163,7 +199,7 @@ export function TodayPage() {
                     <HabitTodayRow
                       key={s.habit.id}
                       state={s}
-                      hint={s.habit.confirmNextDay && !s.doneToday && !closed ? 'Confirmar amanhã' : undefined}
+                      hint={awaitsConfirmation(s) ? 'Confirmar amanhã' : undefined}
                       locked={closed}
                       onToggle={() => habitActions.toggle(s.habit.id, today)}
                       onOpen={() => openHabitLog(s.habit.id, today)}
@@ -190,7 +226,7 @@ export function TodayPage() {
                         <HabitTodayRow
                           key={s.habit.id}
                           state={s}
-                          hint={s.habit.confirmNextDay && !s.doneToday && !closed ? 'Confirmar amanhã' : undefined}
+                          hint={awaitsConfirmation(s) ? 'Confirmar amanhã' : undefined}
                           muted
                           locked={closed}
                           onToggle={() => habitActions.toggle(s.habit.id, today)}

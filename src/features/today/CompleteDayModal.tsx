@@ -14,6 +14,7 @@ import { ScoreBreakdownView } from '@/features/progress/ScoreBreakdownView'
 import { formatNumber, pluralize } from '@/lib/utils'
 import type { Feedback } from '@/services/commands'
 import { useAppStore } from '@/store/app-store'
+import { lateDeadlineLabel } from './late-window'
 
 /**
  * Fluxo "Completar dia": revisar a nota → confirmar → celebração/resultado.
@@ -35,9 +36,8 @@ export function CompleteDayModal({
   const isYesterday = mode === 'yesterday'
 
   // Hábitos que só se confirmam depois (ex.: dormir cedo) e ainda estão abertos.
-  const awaitingConfirmation = isYesterday
-    ? []
-    : [...overview.plannedHabits, ...overview.optionalHabits].filter((h) => h.habit.confirmNextDay && !h.doneToday)
+  const awaitingConfirmation = [...overview.plannedHabits, ...overview.optionalHabits].filter((h) => h.habit.confirmNextDay && !h.doneToday)
+  const dayStartHour = useAppStore((s) => s.settings.dayStartHour)
   const pendingHabits = overview.plannedHabits.filter((h) => !h.doneToday).length
   const pendingTasks = overview.tasks.filter((t) => t.role !== 'bonus' && !t.doneOnDay).length
   const score = result?.record?.score ?? overview.breakdown.score
@@ -157,11 +157,12 @@ export function CompleteDayModal({
           <div className="flex gap-3 rounded-2xl border border-primary/25 bg-primary/8 p-3 text-[13px]">
             <Moon className="mt-0.5 size-4 shrink-0 text-primary" />
             <div>
-              <div className="font-medium">Dá para confirmar amanhã</div>
+              <div className="font-medium">{isYesterday ? 'Ainda dá para confirmar depois' : 'Dá para confirmar amanhã'}</div>
               <div className="text-muted-foreground">
-                {awaitingConfirmation.map((h) => h.habit.name).join(', ')} {awaitingConfirmation.length === 1 ? 'é confirmado' : 'são confirmados'} na
-                manhã seguinte. Se encerrar agora, {awaitingConfirmation.length === 1 ? 'conta' : 'contam'} como não feito — ou deixe o dia aberto e
-                encerre amanhã na revisão.
+                Pode encerrar normalmente. {awaitingConfirmation.map((h) => `“${h.habit.name}”`).join(', ')}{' '}
+                {awaitingConfirmation.length === 1 ? 'pode ser confirmado' : 'podem ser confirmados'}{' '}
+                {isYesterday ? lateDeadlineLabel(dayStartHour) : 'amanhã, pela tela Hoje'} — a conclusão conta para este dia e a nota é recalculada. O
+                restante do dia fica travado.
               </div>
             </div>
           </div>

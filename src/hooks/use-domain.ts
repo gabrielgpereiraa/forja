@@ -10,6 +10,7 @@ import { attributeXp, balances } from '@/domain/gamification/engine'
 import { getLevelInfo } from '@/domain/gamification/levels'
 import { buildDayOverview } from '@/domain/rules/day-overview'
 import { suggestAll } from '@/domain/rules/habit-progression'
+import { lateConfirmationCandidates } from '@/domain/rules/late-confirmation'
 import { getHabitsForDay, habitWeekStreak, indexLogs } from '@/domain/rules/habit-schedule'
 import { computePlayerStats } from '@/domain/rules/stats'
 import { computeStreak } from '@/domain/rules/streaks'
@@ -94,6 +95,38 @@ export function usePendingReview(today: ISODate) {
   const overview = useDayOverview(yesterday)
   if (!startDate || yesterday < startDate || overview.record || overview.phase === 'empty') return null
   return overview
+}
+
+/**
+ * Ontem já encerrado com hábitos "Confirmar na manhã seguinte" que ainda podem
+ * ser confirmados (ou desfeitos). `null` fora da janela ou sem candidatos.
+ */
+export function useLateConfirmation(today: ISODate) {
+  const date = addDays(today, -1)
+  const habits = useAppStore((s) => s.habits)
+  const record = useAppStore((s) => s.records[date] ?? null)
+  const logs = useLogIndex()
+  return useMemo(() => {
+    const { pending, confirmed } = lateConfirmationCandidates(record, habits, logs, today)
+    if (!record || pending.length + confirmed.length === 0) return null
+    const ids = new Set([...pending, ...confirmed])
+    const states = getHabitsForDay(habits, date, logs).filter((s) => ids.has(s.habit.id))
+    return { date, record, states, pending: new Set(pending), confirmed: new Set(confirmed) }
+  }, [record, habits, logs, today, date])
+}
+
+/** Pode confirmar/desfazer este hábito de `date` agora? (dia encerrado, janela aberta) */
+export function useLateConfirmable(habitId: string | null, date: ISODate | null, today: ISODate) {
+  const habits = useAppStore((s) => s.habits)
+  const record = useAppStore((s) => (date ? s.records[date] ?? null : null))
+  const logs = useLogIndex()
+  return useMemo(() => {
+    if (!habitId || !record) return null
+    const { pending, confirmed } = lateConfirmationCandidates(record, habits, logs, today)
+    if (pending.includes(habitId)) return 'confirm' as const
+    if (confirmed.includes(habitId)) return 'undo' as const
+    return null
+  }, [habitId, record, habits, logs, today])
 }
 
 /** Sugestões de progressão de meta para os hábitos ativos. */

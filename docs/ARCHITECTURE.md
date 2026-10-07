@@ -42,7 +42,7 @@ Fluxo: **página → hook de ação → store → comando puro → domínio**. P
 | `Habit` | `name, category, schedule {weeklyGoal, days\|null}, target {amount, unit}\|null, icon, color, archived, startDate, confirmNextDay?, goalHistory?, progressionSnoozedUntil?` | `days = null` → frequência flexível; `confirmNextDay` → confirmado na revisão da manhã seguinte; `goalHistory` → metas por semana |
 | `HabitLog` | `habitId, date, value, completed` | 1 por hábito/dia; `value` acumula minutos/páginas; `completed` é snapshot |
 | `Task` | `title, dueDate\|null, priority, completed, completedOn, createdOn` | `completedOn` = dia de produtividade |
-| `DailyRecord` | `date, score\|null, breakdown, completed/total habits & tasks, closedBy` | imutável; `score = null` = dia sem plano (neutro) |
+| `DailyRecord` | `date, score\|null, breakdown, completed/total habits & tasks, closedBy, awaitingConfirmation?, lateConfirmations?` | imutável, exceto pela confirmação tardia; `score = null` = dia sem plano (neutro) |
 | `LedgerEntry` | `resource, amount, reason, ruleId, sourceKey, date, attribute?` | base de XP, foco, moedas futuras… |
 
 Datas são `YYYY-MM-DD` locais (`ISODate`). O **dia de produtividade** vira às 4h por padrão (configurável): registrar algo à 1h conta para o dia anterior.
@@ -98,9 +98,21 @@ Faixas (`scoring/tiers.ts`): Lendário ≥ 9 · Ótimo ≥ 7,5 · Bom ≥ 6 · R
 1. **Completar dia** (painel Hoje) grava o snapshot; o dia fica somente leitura até ser reaberto.
 2. Se ontem ficou aberto e tinha algo planejado, ele **não** é fechado sozinho: o painel mostra o cartão **"Ontem ainda está aberto"**, com os hábitos marcados como *confirmar na manhã seguinte* (ex.: "Dormir até 23h") e o que ficou pendente. Tudo o que for marcado ali conta **para ontem** (`date = ontem`, `completedOn = ontem`). Depois, **Encerrar ontem** grava a nota.
 3. Dias anteriores a ontem — ou ontem vazio — são encerrados automaticamente ao abrir o app (`closedBy: 'auto'`). Ou seja: a janela de revisão vai até o fim do dia seguinte.
-4. Hábitos com `confirmNextDay` aparecem hoje com o selo "Confirmar amanhã", e o fluxo de Completar dia avisa que encerrar agora os conta como não feitos.
+4. Hábitos com `confirmNextDay` aparecem com o selo "Confirmar amanhã". Encerrar o dia sem marcá-los é normal: veja a confirmação tardia abaixo.
 
 Regras em `services/commands.ts` (`isPendingReview`, `autoCloseMissedDays`) e `domain/rules/streaks.ts` (dia pendente não quebra).
+
+### Confirmação tardia ("Confirmar na manhã seguinte")
+
+Dia encerrado **não é reaberto** e continua bloqueado (`setHabitValue` ignora datas com registro). A única exceção é controlada:
+
+- **Quem:** só os hábitos que tinham `confirmNextDay` e estavam em aberto **no momento do encerramento**. A lista fica congelada no registro (`DailyRecord.awaitingConfirmation`); ligar a flag depois não libera nada. Registros antigos, sem a lista, usam a flag atual.
+- **Quando:** enquanto o dia encerrado é "ontem" — até o início do dia seguinte (`settings.dayStartHour`, padrão 04:00). Depois disso o registro é definitivo.
+- **O quê:** confirmar (ou desfazer uma confirmação tardia). A conclusão grava o log **no dia anterior**; o registro é recalculado (nota, hábitos concluídos, breakdown), as recompensas `day:<data>` são regeradas (XP da nota, "todos os hábitos", marco de sequência) e, se hoje já estiver encerrado, as de hoje também, porque a sequência depende de ontem. `closedAt`/`closedBy` não mudam.
+- **Auditoria:** `DailyRecord.lateConfirmations` guarda hábito, horário e o valor anterior (para desfazer sem perder progresso parcial). O detalhe do dia mostra "confirmado depois".
+- **Onde:** cartão "Confirme o que só dava para saber hoje" no painel Hoje (dispensável com "Não cumpri") e o painel do hábito aberto a partir dele. Também cobre o dia vazio encerrado sozinho, se o hábito estava como opcional.
+
+Regras em `domain/rules/late-confirmation.ts` (`lateConfirmationCandidates`, `eligibleLateHabitIds`) e `services/commands.ts` (`confirmLateHabit`).
 
 ## 6. Gamificação — preparada para recompensas
 
@@ -213,4 +225,4 @@ Navegação inferior no celular, sidebar a partir de 768 px; bottom sheets no ce
 
 ## 9. Testes
 
-`npm test` cobre habilidades (evolução, manutenção, tolerância, fases de ferrugem, piso, maestria × retenção, recuperação, determinismo, vínculos com hábitos, prática avulsa, recompensas de nível), datas, ritmo de hábitos, agenda de tarefas, fórmula da nota, sequências, regras de XP, comandos (desfazer, meta semanal, encerrar/reabrir dia, auto-encerramento) e consistência dos dados de exemplo.
+`npm test` cobre habilidades (evolução, manutenção, tolerância, fases de ferrugem, piso, maestria × retenção, recuperação, determinismo, vínculos com hábitos, prática avulsa, recompensas de nível), datas, ritmo de hábitos, agenda de tarefas, fórmula da nota, sequências, regras de XP, comandos (desfazer, meta semanal, encerrar/reabrir dia, auto-encerramento, confirmação tardia) e consistência dos dados de exemplo.

@@ -93,11 +93,8 @@ export function createDailyRecord(
   closedBy: DailyRecord['closedBy'],
   closedAt: string,
 ): DailyRecord {
-  const breakdown = computeDayScore({
-    date: overview.date,
-    habits: [...overview.plannedHabits, ...overview.optionalHabits],
-    tasks: overview.tasks,
-  })
+  const states = [...overview.plannedHabits, ...overview.optionalHabits]
+  const breakdown = computeDayScore({ date: overview.date, habits: states, tasks: overview.tasks })
   return {
     date: overview.date,
     score: breakdown.score,
@@ -108,6 +105,7 @@ export function createDailyRecord(
     totalTasks: overview.tasksTotal,
     closedAt,
     closedBy,
+    awaitingConfirmation: states.filter((s) => s.habit.confirmNextDay && !s.doneToday).map((s) => s.habit.id),
   }
 }
 

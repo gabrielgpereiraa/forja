@@ -10,7 +10,7 @@ import { findNewlyUnlocked } from '@/domain/gamification/achievements'
 import { evaluateEvent, sumResource } from '@/domain/gamification/engine'
 import { getLevelInfo } from '@/domain/gamification/levels'
 import type { AchievementDefinition, GameEvent, LedgerDraft, LedgerEntry } from '@/domain/models/gamification'
-import type { DailyRecord } from '@/domain/models/day'
+import type { DailyRecord, LateConfirmation } from '@/domain/models/day'
 import type { Habit, HabitInput, HabitLog } from '@/domain/models/habit'
 import { createId } from '@/domain/models/ids'
 import type { Task, TaskInput } from '@/domain/models/task'
@@ -18,6 +18,7 @@ import { buildDayOverview, createDailyRecord } from '@/domain/rules/day-overview
 import { getWeekProgress, indexLogs, isSessionComplete, sessionTargetOf } from '@/domain/rules/habit-schedule'
 import { applyGoalChange, habitForDate } from '@/domain/rules/habit-goal-history'
 import type { GoalProposal } from '@/domain/rules/habit-progression'
+import { eligibleLateHabitIds, lateConfirmationCandidates } from '@/domain/rules/late-confirmation'
 import { computePlayerStats } from '@/domain/rules/stats'
 import { computeStreak } from '@/domain/rules/streaks'
 import type { AppData } from './app-data'
@@ -189,9 +190,16 @@ export function deleteHabit(data: AppData, id: string, today: ISODate): AppData 
  * `0` remove o registro. Gera/reverte recompensas automaticamente.
  */
 export function setHabitValue(data: AppData, habitId: string, date: ISODate, value: number): CommandResult {
+  // Dia encerrado é somente leitura (exceção controlada: `confirmLateHabit`).
+  if (data.records[date]) return { data, feedback: emptyFeedback() }
+  return writeHabitValue(data, habitId, date, value)
+}
+
+/** Grava o valor sem checar o bloqueio do dia — uso interno dos comandos. */
+function writeHabitValue(data: AppData, habitId: string, date: ISODate, value: number): CommandResult {
   const feedback = emptyFeedback()
   const habit = data.habits.find((h) => h.id === habitId)
-  if (!habit || data.records[date]) return { data, feedback }
+  if (!habit) return { data, feedback }
 
   const existing = data.logs.find((l) => l.habitId === habitId && l.date === date) ?? null
   let logs = data.logs
@@ -331,13 +339,71 @@ export function closeDay(data: AppData, date: ISODate, closedBy: DailyRecord['cl
   })
   const record = createDailyRecord(overview, closedBy, nowTimestamp())
   const records = { ...data.records, [date]: record }
-  const streak = computeStreak(records, date)
-  const event: GameEvent = { type: 'day.closed', record, streak: streak.current, date }
-  const ledger = [...withoutSource(data.ledger, `day:${date}`), ...toEntries(evaluateEvent(event))]
-  feedback.events.push(event.type)
+  const { ledger, streak } = rewardDay(data.ledger, records, date)
+  feedback.events.push('day.closed')
   feedback.record = record
-  feedback.streak = streak.current
+  feedback.streak = streak
   return finalize(data, { ...data, records, ledger }, date, feedback)
+}
+
+/** (Re)gera as recompensas de encerramento de um dia a partir do registro atual. */
+function rewardDay(ledger: LedgerEntry[], records: AppData['records'], date: ISODate): { ledger: LedgerEntry[]; streak: number } {
+  const record = records[date]
+  const rest = withoutSource(ledger, `day:${date}`)
+  if (!record) return { ledger: rest, streak: 0 }
+  const streak = computeStreak(records, date).current
+  const event: GameEvent = { type: 'day.closed', record, streak, date }
+  return { ledger: [...rest, ...toEntries(evaluateEvent(event))], streak }
+}
+
+/**
+ * Confirmação tardia: na manhã seguinte, confirma (ou desfaz a confirmação de)
+ * um hábito marcado como "Confirmar na manhã seguinte" de um dia já encerrado.
+ * O registro fica no dia anterior e o dia é recalculado (nota, hábitos, XP,
+ * sequência). O dia continua encerrado; nada além disso pode mudar.
+ */
+export function confirmLateHabit(data: AppData, habitId: string, date: ISODate, today: ISODate, done: boolean): CommandResult {
+  const none = { data, feedback: emptyFeedback() }
+  const record = data.records[date]
+  const habit = data.habits.find((h) => h.id === habitId)
+  if (!record || !habit) return none
+  const candidates = lateConfirmationCandidates(record, data.habits, indexLogs(data.logs), today)
+  const log = data.logs.find((l) => l.habitId === habitId && l.date === date)
+  const confirmations = record.lateConfirmations ?? []
+
+  let nextConfirmations: LateConfirmation[]
+  let value: number
+  if (done) {
+    if (!candidates.pending.includes(habitId)) return none
+    const previousValue = log?.value ?? 0
+    value = Math.max(sessionTargetOf(habit, date), previousValue)
+    nextConfirmations = [...confirmations, { habitId, confirmedAt: nowTimestamp(), previousValue }]
+  } else {
+    const entry = confirmations.find((c) => c.habitId === habitId)
+    if (!entry || !candidates.confirmed.includes(habitId)) return none
+    value = entry.previousValue
+    nextConfirmations = confirmations.filter((c) => c.habitId !== habitId)
+  }
+
+  const written = writeHabitValue(data, habitId, date, value)
+  let next = written.data
+  const overview = buildDayOverview({ date, habits: next.habits, logs: indexLogs(next.logs), tasks: next.tasks, record: null })
+  const rescored: DailyRecord = {
+    ...createDailyRecord(overview, record.closedBy, record.closedAt),
+    // A lista de elegíveis fica congelada como estava no encerramento.
+    awaitingConfirmation: eligibleLateHabitIds(record, data.habits),
+    ...(nextConfirmations.length ? { lateConfirmations: nextConfirmations } : {}),
+  }
+  const records = { ...next.records, [date]: rescored }
+  let { ledger } = rewardDay(next.ledger, records, date)
+  // Se hoje já foi encerrado, sua sequência depende de ontem: recalcula também.
+  if (records[today]) ledger = rewardDay(ledger, records, today).ledger
+  next = { ...next, records, ledger }
+
+  const feedback = written.feedback
+  feedback.record = rescored
+  feedback.streak = computeStreak(records, today).current
+  return finalize(data, next, date, feedback)
 }
 
 export function reopenDay(data: AppData, date: ISODate): AppData {

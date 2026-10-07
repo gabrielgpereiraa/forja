@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import type { ISODate } from '@/domain/date'
 import { useAppStore } from '@/store/app-store'
 import { formatAmount } from '@/features/habits/habit-format'
+import { formatNumber } from '@/lib/utils'
 import { notifyFeedback, notifyProgression } from './notify'
 
 export function useHabitActions() {
@@ -55,7 +56,28 @@ export function useHabitActions() {
     [setHabitValue],
   )
 
-  return { toggle, setValue }
+  const confirmLateHabit = useAppStore((s) => s.confirmLateHabit)
+
+  /** Confirma (ou desfaz) um hábito de ontem já encerrado; a conclusão conta para ontem. */
+  const confirmLate = useCallback(
+    (habitId: string, date: ISODate, today: ISODate, done: boolean) => {
+      const habit = useAppStore.getState().habits.find((h) => h.id === habitId)
+      const fb = confirmLateHabit(habitId, date, today, done)
+      if (!habit || !fb.record) return
+      if (done) {
+        notifyFeedback(fb, {
+          title: 'Confirmado para ontem',
+          sub: `${habit.name} · nota de ontem ${fb.record.score === null ? '—' : formatNumber(fb.record.score, 1)}`,
+          undo: () => confirmLateHabit(habitId, date, today, false),
+        })
+      } else {
+        toast('Confirmação desfeita', { description: habit.name })
+      }
+    },
+    [confirmLateHabit],
+  )
+
+  return { toggle, setValue, confirmLate }
 }
 
 export function useTaskActions() {

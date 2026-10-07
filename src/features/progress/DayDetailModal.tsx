@@ -22,13 +22,16 @@ function DayDetailContent({ date, today, onClose }: { date: `${number}-${number}
   const score = o.breakdown.score
   const habits = [...o.plannedHabits, ...o.optionalHabits.filter((h) => h.doneToday)]
   const live = !o.record && (date === today || date === addDays(today as ISODate, -1))
+  const late = new Set((o.record?.lateConfirmations ?? []).map((c) => c.habitId))
+  const closedLabel = o.record ? (o.record.closedBy === 'auto' ? 'Encerrado automaticamente' : 'Encerrado por você') : ''
+  const lateLabel = late.size > 0 ? ` · ${late.size === 1 ? '1 hábito confirmado' : `${late.size} hábitos confirmados`} na manhã seguinte` : ''
 
   return (
     <ResponsiveModal
       open
       onOpenChange={(v) => !v && onClose()}
       title={capitalize(formatDate(date, "EEEE, d 'de' MMMM"))}
-      description={o.record ? (o.record.closedBy === 'auto' ? 'Encerrado automaticamente' : 'Encerrado por você') : live ? (date === today ? 'Dia em andamento — nota prévia' : 'Aguardando a revisão da manhã — nota prévia') : 'Sem registro'}
+      description={o.record ? closedLabel + lateLabel : live ? (date === today ? 'Dia em andamento — nota prévia' : 'Aguardando a revisão da manhã — nota prévia') : 'Sem registro'}
     >
       <div className="space-y-5 pb-2">
         <div className="flex items-center justify-between rounded-2xl bg-surface p-4">
@@ -60,6 +63,7 @@ function DayDetailContent({ date, today, onClose }: { date: `${number}-${number}
                 <li key={h.habit.id} className="flex items-center gap-3 rounded-xl px-1 py-1">
                   <HabitGlyph icon={h.habit.icon} color={h.habit.color} size="sm" />
                   <span className={cn('flex-1 truncate text-sm', !h.doneToday && 'text-muted-foreground')}>{h.habit.name}</span>
+                  {late.has(h.habit.id) && <span className="text-[11px] text-primary">confirmado depois</span>}
                   {h.requirement !== 'required' && <span className="text-[11px] text-muted-foreground">extra</span>}
                   {h.doneToday ? <Check className="size-4 text-primary" strokeWidth={3} /> : <Circle className="size-4 text-muted-foreground/50" />}
                 </li>

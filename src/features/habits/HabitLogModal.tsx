@@ -14,7 +14,7 @@ import { goalVersions } from '@/domain/rules/habit-goal-history'
 import { suggestProgression } from '@/domain/rules/habit-progression'
 import { getHabitDayState, habitWeekStreak } from '@/domain/rules/habit-schedule'
 import { buildWeekOverview } from '@/domain/rules/week-overview'
-import { useLogIndex } from '@/hooks/use-domain'
+import { useLateConfirmable, useLogIndex } from '@/hooks/use-domain'
 import { useToday } from '@/hooks/use-today'
 import { cn, formatNumber, pluralize } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
@@ -36,6 +36,7 @@ export function HabitLogModal() {
   const logs = useLogIndex()
   const today = useToday()
   const actions = useHabitActions()
+  const lateMode = useLateConfirmable(target?.habitId ?? null, target?.date ?? null, today)
 
   const data = useMemo(() => {
     if (!habit || !target) return null
@@ -93,9 +94,21 @@ export function HabitLogModal() {
         <div className="rounded-2xl bg-surface p-4">
           <div className="mb-3 flex items-center justify-between text-[13px]">
             <span className="font-medium">{relativeDayLabel(target.date, today)}</span>
-            {locked && <span className="text-muted-foreground">Dia encerrado</span>}
+            {locked && <span className="text-muted-foreground">{lateMode ? 'Encerrado · confirmação da manhã seguinte' : 'Dia encerrado'}</span>}
           </div>
-          {t && unit ? (
+          {locked && lateMode ? (
+            <div className="space-y-2">
+              <Button
+                size="lg"
+                onClick={() => actions.confirmLate(habit.id, target.date, today, lateMode === 'confirm')}
+                className={cn('w-full', lateMode === 'undo' ? 'bg-[var(--hc)] text-[var(--hc-fg)] hover:bg-[var(--hc)]/90' : '')}
+                variant={lateMode === 'undo' ? 'default' : 'outline'}
+              >
+                <Check /> {lateMode === 'undo' ? 'Confirmado — toque para desfazer' : 'Confirmar que cumpri'}
+              </Button>
+              <p className="text-[12px] text-muted-foreground">Conta para {relativeDayLabel(target.date, today).toLowerCase()}; a nota daquele dia é recalculada.</p>
+            </div>
+          ) : t && unit ? (
             <div className="flex items-center gap-4">
               <ProgressRing value={state.sessionProgress} size={92} stroke={8} color="var(--hc)">
                 <span className="font-display text-2xl leading-none font-semibold tabular">

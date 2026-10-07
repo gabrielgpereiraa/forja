@@ -36,6 +36,8 @@ export interface AppActions {
   deleteHabit: (id: string, today: ISODate) => void
   toggleHabit: (id: string, date: ISODate) => cmd.Feedback
   setHabitValue: (id: string, date: ISODate, value: number) => cmd.Feedback
+  /** Confirmação tardia de hábito "Confirmar na manhã seguinte" (dia já encerrado). */
+  confirmLateHabit: (id: string, date: ISODate, today: ISODate, done: boolean) => cmd.Feedback
 
   createTask: (input: TaskInput, today: ISODate) => string
   updateTask: (id: string, input: TaskInput) => void
@@ -96,6 +98,7 @@ export const useAppStore = create<AppState>()(
         deleteHabit: (id, today) => apply((d) => cmd.deleteHabit(d, id, today)),
         toggleHabit: (id, date) => run((d) => cmd.toggleHabit(d, id, date)),
         setHabitValue: (id, date, value) => run((d) => cmd.setHabitValue(d, id, date, value)),
+        confirmLateHabit: (id, date, today, done) => run((d) => cmd.confirmLateHabit(d, id, date, today, done)),
 
         createTask: (input, today) => {
           const r = cmd.createTask(dataOf(get()), input, today)
