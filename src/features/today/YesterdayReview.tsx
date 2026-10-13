@@ -5,6 +5,7 @@ import { Surface } from '@/components/layout'
 import { ScorePill } from '@/components/score'
 import { Button } from '@/components/ui/button'
 import type { DayOverview } from '@/domain/rules/day-overview'
+import { habitsForMorningReview } from '@/domain/rules/late-confirmation'
 import { cn, formatNumber, pluralize } from '@/lib/utils'
 import { useUiStore } from '@/store/ui-store'
 import { useHabitActions, useTaskActions } from '@/features/feedback/use-actions'
@@ -23,19 +24,16 @@ export function YesterdayReview({ overview, onComplete }: { overview: DayOvervie
   const taskActions = useTaskActions()
   const [expanded, setExpanded] = useState(true)
 
-  const allHabits = [...overview.plannedHabits, ...overview.optionalHabits]
+  // Só hábitos com "Confirmar na manhã seguinte" (hábitos comuns pendentes não entram).
+  const allHabits = habitsForMorningReview(overview)
   // Lista estável: o que estava pendente quando a revisão abriu continua
   // visível depois de marcado (sem itens "pulando" da tela).
   const [initial] = useState(() => ({
-    habits: new Set(
-      allHabits.filter((h) => h.habit.confirmNextDay || (h.requirement === 'required' && !h.doneToday)).map((h) => h.habit.id),
-    ),
+    habits: new Set(allHabits.map((h) => h.habit.id)),
     tasks: new Set(overview.tasks.filter((t) => t.role !== 'bonus' && !t.task.completed).map((t) => t.task.id)),
   }))
 
-  const habits = allHabits
-    .filter((h) => initial.habits.has(h.habit.id))
-    .sort((a, b) => Number(Boolean(b.habit.confirmNextDay)) - Number(Boolean(a.habit.confirmNextDay)))
+  const habits = allHabits.filter((h) => initial.habits.has(h.habit.id))
   const tasks = overview.tasks.filter((t) => initial.tasks.has(t.task.id))
   const confirmCount = habits.filter((h) => h.habit.confirmNextDay).length
   const doneAlready = overview.doneItems

@@ -10,7 +10,8 @@ import { addDays, type ISODate } from '../date'
 import type { DailyRecord } from '../models/day'
 import type { Habit } from '../models/habit'
 import type { ID } from '../models/ids'
-import { isHabitActiveOn, logKey, type LogIndex } from './habit-schedule'
+import type { DayOverview } from './day-overview'
+import { isHabitActiveOn, logKey, type HabitDayState, type LogIndex } from './habit-schedule'
 
 export interface LateConfirmationCandidates {
   /** Elegíveis e ainda não concluídos: podem ser confirmados. */
@@ -48,4 +49,13 @@ export function lateConfirmationCandidates(
     (id) => active.has(id) && !confirmedSet.has(id) && !logs.get(logKey(id, record.date))?.completed,
   )
   return { pending, confirmed }
+}
+
+/**
+ * Hábitos que a revisão da manhã ("Ontem ainda está aberto") oferece para
+ * marcar em ontem: somente os configurados com "Confirmar na manhã seguinte".
+ * Hábitos comuns pendentes não entram — não dá para completar o passado.
+ */
+export function habitsForMorningReview(overview: Pick<DayOverview, 'plannedHabits' | 'optionalHabits'>): HabitDayState[] {
+  return [...overview.plannedHabits, ...overview.optionalHabits].filter((s) => s.habit.confirmNextDay)
 }

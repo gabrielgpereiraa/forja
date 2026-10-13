@@ -96,7 +96,7 @@ Faixas (`scoring/tiers.ts`): Lendário ≥ 9 · Ótimo ≥ 7,5 · Bom ≥ 6 · R
 ### Encerramento do dia e revisão da manhã
 
 1. **Completar dia** (painel Hoje) grava o snapshot; o dia fica somente leitura até ser reaberto.
-2. Se ontem ficou aberto e tinha algo planejado, ele **não** é fechado sozinho: o painel mostra o cartão **"Ontem ainda está aberto"**, com os hábitos marcados como *confirmar na manhã seguinte* (ex.: "Dormir até 23h") e o que ficou pendente. Tudo o que for marcado ali conta **para ontem** (`date = ontem`, `completedOn = ontem`). Depois, **Encerrar ontem** grava a nota.
+2. Se ontem ficou aberto e tinha algo planejado, ele **não** é fechado sozinho: o painel mostra o cartão **"Ontem ainda está aberto"**, com **somente** os hábitos marcados como *confirmar na manhã seguinte* (ex.: "Dormir até 23h") e as tarefas pendentes; hábitos comuns pendentes não entram (`habitsForMorningReview`). Tudo o que for marcado ali conta **para ontem** (`date = ontem`, `completedOn = ontem`). Depois, **Encerrar ontem** grava a nota.
 3. Dias anteriores a ontem — ou ontem vazio — são encerrados automaticamente ao abrir o app (`closedBy: 'auto'`). Ou seja: a janela de revisão vai até o fim do dia seguinte.
 4. Hábitos com `confirmNextDay` aparecem com o selo "Confirmar amanhã". Encerrar o dia sem marcá-los é normal: veja a confirmação tardia abaixo.
 

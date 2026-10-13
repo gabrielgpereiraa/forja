@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { sumResource } from '@/domain/gamification/engine'
 import type { ISODate } from '@/domain/date'
 import type { HabitInput } from '@/domain/models/habit'
+import { buildDayOverview } from '@/domain/rules/day-overview'
+import { indexLogs } from '@/domain/rules/habit-schedule'
+import { habitsForMorningReview } from '@/domain/rules/late-confirmation'
 import { computeStreak } from '@/domain/rules/streaks'
 import { createEmptyData, type AppData } from '../app-data'
 import * as cmd from '../commands'
@@ -134,5 +137,15 @@ describe('confirmação tardia', () => {
     const r = cmd.confirmLateHabit(data, once.habit.id, D, NEXT, true)
     expect(r.data.logs.some((l) => l.habitId === once.habit.id && l.date === D && l.completed)).toBe(true)
     expect(r.data.records[D]?.closedBy).toBe('auto')
+  })
+
+  it('revisão da manhã (dia aberto) lista só hábitos com a flag, mesmo com outros pendentes', () => {
+    let data: AppData = cmd.completeOnboarding(createEmptyData(), 'Nino', '2026-10-05')
+    const sleep = cmd.createHabit(data, SLEEP, '2026-10-05')
+    const read = cmd.createHabit(sleep.data, READ, '2026-10-05')
+    data = read.data // nenhum dos dois foi marcado em D: ambos obrigatórios e pendentes
+    const overview = buildDayOverview({ date: D, habits: data.habits, logs: indexLogs(data.logs), tasks: data.tasks, record: null })
+    expect(overview.plannedHabits.some((s) => s.habit.id === read.habit.id && !s.doneToday)).toBe(true)
+    expect(habitsForMorningReview(overview).map((s) => s.habit.id)).toEqual([sleep.habit.id])
   })
 })
