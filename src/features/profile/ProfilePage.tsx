@@ -39,7 +39,7 @@ import { xpForLevel } from '@/domain/gamification/levels'
 import { DEFAULT_RULES } from '@/domain/gamification/rules'
 import { ATTRIBUTE_IDS, ATTRIBUTES, type AttributeId } from '@/domain/models/attributes'
 import type { AchievementTier } from '@/domain/models/gamification'
-import { CURRENT_SCORING } from '@/domain/scoring'
+import { strategyForDay } from '@/domain/scoring'
 import { STREAK_MIN_SCORE } from '@/domain/rules/streaks'
 import { usePlayer, useSkillViews, useStreak } from '@/hooks/use-domain'
 import { HabitGlyph } from '@/components/appearance'
@@ -348,7 +348,7 @@ export function ProfilePage() {
           </div>
         </Surface>
         <p className="px-1 pt-2 text-[12px] text-muted-foreground/70">
-          {cloudEnabled ? 'Dados salvos na sua conta' : 'Dados salvos apenas neste dispositivo'} · {CURRENT_SCORING.label}
+          {cloudEnabled ? 'Dados salvos na sua conta' : 'Dados salvos apenas neste dispositivo'} · {strategyForDay(today).label}
         </p>
       </section>
 

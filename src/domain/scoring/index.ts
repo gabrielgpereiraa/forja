@@ -1,11 +1,21 @@
 import { scoringV1 } from './strategy-v1'
+import { scoringV2 } from './strategy-v2'
 import type { ScoringInput, ScoringStrategy, ScoreBreakdown } from './types'
 
-/** Registro de estratégias. Novas versões entram aqui; o histórico preserva a sua. */
+/**
+ * Registro de estratégias. Novas versões entram aqui; o histórico preserva a
+ * sua. Uma estratégia nunca sai do registro: dias encerrados com ela precisam
+ * continuar legíveis e recalculáveis (inclusive depois de uma reversão).
+ */
 export const SCORING_STRATEGIES: Record<string, ScoringStrategy> = {
   [scoringV1.version]: scoringV1,
+  [scoringV2.version]: scoringV2,
 }
 
+/**
+ * Estratégia padrão quando a v2 não está ligada para o dia. Para um dia
+ * específico, use `strategyForDay(data)`; para um dia encerrado, `strategyFor(versão)`.
+ */
 export const CURRENT_SCORING: ScoringStrategy = scoringV1
 
 /** Versão assumida por registros sem `breakdown.version` (anteriores ao versionamento explícito). */
@@ -27,3 +37,7 @@ export function computeDayScore(input: ScoringInput, strategy: ScoringStrategy =
 }
 
 export * from './types'
+export { configureScoringActivation, getScoringActivation, isV2Day, resolveScoringActivation, SCORING_V2_OFF, strategyForDay } from './activation'
+export type { ActivationEnv, ResolvedActivation, ScoringActivation } from './activation'
+export { scoringV1 } from './strategy-v1'
+export { scoringV2, taskCapFactor, V2 } from './strategy-v2'

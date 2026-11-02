@@ -8,6 +8,8 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
+  // Ambiente da Vercel no build (production/preview/development) — usado pela trava da nota v2.
+  define: { 'import.meta.env.VITE_VERCEL_ENV': JSON.stringify(process.env.VERCEL_ENV ?? '') },
   server: { port: 5180 },
   build: { chunkSizeWarningLimit: 700 },
 })

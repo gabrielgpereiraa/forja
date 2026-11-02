@@ -87,7 +87,44 @@ Daí saem estados claros e usados na UI:
 
 Componentes sem itens são ignorados (o peso é redistribuído). Ajustes: **+0,3** todos os hábitos do dia, **+0,25** por hábito extra (máx. 0,75), **+0,15** por tarefa adiantada (máx. 0,45), **−0,15** por tarefa atrasada pendente (máx. −0,45). Sem nada planejado (nenhum hábito obrigatório nem tarefa do dia/atrasada) → `score = null`, mesmo que haja hábitos extras ou tarefas adiantadas: extras mantêm só suas recompensas próprias (sessão, Foco, tarefa) e não geram nota, XP de nota nem sequência.
 
-Cada `DailyRecord` guarda o `breakdown` completo e a `version`, então a fórmula pode evoluir (`SCORING_STRATEGIES`) sem reescrever o histórico. Encerrar usa a estratégia ativa (`CURRENT_SCORING`); qualquer recálculo de dia encerrado (confirmação tardia) usa a estratégia da versão gravada (`strategyFor(breakdown.version)`), com registros sem versão tratados como `v1` e versão desconhecida bloqueando o recálculo. Os pesos estão centralizados no objeto `V1`.
+Cada `DailyRecord` guarda o `breakdown` completo e a `version`, então a fórmula pode evoluir (`SCORING_STRATEGIES`) sem reescrever o histórico. A nota ao vivo, a revisão da manhã e o encerramento usam a estratégia do dia (`strategyForDay(data)`, v1 ou v2 pela data de ativação); qualquer recálculo de dia encerrado (confirmação tardia) usa a estratégia da versão gravada (`strategyFor(breakdown.version)`), com registros sem versão tratados como `v1` e versão desconhecida bloqueando o recálculo. Os pesos estão centralizados no objeto `V1`.
+
+### Nota v2 (`scoring/strategy-v2.ts`)
+
+Aprovada em 02/11/2026 (especificação "Forja — Especificação da nota do dia v2"). Cada item do plano vale um número visível:
+
+- **Base** = round1(10 × (h + k·t) ÷ (H + k·T)). H = hábitos exigidos; h = soma dos progressos deles (parcial `min(1, valor ÷ meta)`); T = unidades de tarefas do dia e atrasadas (baixa 0,5 · normal 1 · alta 2); t = unidades concluídas.
+- **Teto das tarefas**: k = H ÷ T quando há hábitos exigidos e T > H (`taskCapFactor`) — as tarefas somam no máximo 50% da base e a proporção entre prioridades se mantém; k = 1 nos demais casos (dia só de tarefas chega a 10).
+- **Valor por item**: hábito 10 ÷ (H + kT); tarefa 10 × k × unidades ÷ (H + kT); a soma exata é 10. Vai no detalhamento (`breakdown.items`: id, papel, unidades, valor, ganho, progresso) e em `breakdown.taskCap`; a tela só lê esses valores.
+- **Bônus**: +0,3 com todos os exigidos concluídos (exige ≥ 1); opcionais 0,25 × progresso (até 0,75); tarefas adiantadas +0,15 (até 0,45). **Sem penalidade por atraso** (a tarefa atrasada pesa pela prioridade). Sem plano → `score = null`.
+- **Ritmo da semana** fora da nota: `rules/weekly-rhythm.ts`, por hábito `min(1, (concluídas até hoje + parcial de hoje) ÷ esperadas até hoje)` — o parcial de hoje soma uma vez (0 se a sessão já foi concluída); parciais de dias anteriores não contam. Cartão em Hoje e no resumo da semana atual, só em dias v2.
+- **XP do dia** continua nota × 10 (+ ritual, todos os hábitos, marcos). Foco, XP de sessão, habilidades e atributos não mudam.
+- **Interface (só em dias v2)**: valor de cada item em Hoje e em Tarefas; anel = progresso do plano em unidades (igual à base); detalhe da nota ao tocar no número; aviso de conclusão com o concedido (XP, Foco) e a nota até agora (antes → depois); aviso de plano ao criar/editar tarefa (`withPlanFeedback`).
+
+### Ativação da v2 (`scoring/activation.ts`, `lib/scoring-activation.ts`)
+
+A estratégia de um dia **aberto** é decidida pela data de produtividade (que já respeita o início do dia configurado, 04:00 por padrão); dias encerrados usam sempre a versão gravada.
+
+| Variável (build) | Efeito |
+| --- | --- |
+| `VITE_SCORING_V2_FROM=AAAA-MM-DD` | v2 a partir desse dia do app (inclusivo). Ausente → tudo em v1. |
+| `VITE_SCORING_V2_UNTIL=AAAA-MM-DD` | opcional: volta à v1 a partir desse dia (exclusivo), para reverter sem trocar a regra de um dia em andamento. |
+| `VERCEL_ENV` → `VITE_VERCEL_ENV` | preenchida no build (`vite.config.ts`). **Trava**: com Supabase configurado, a v2 só liga em `production`; prévia conectada ao Supabase ignora a data (aviso no console). |
+
+São variáveis de **build**: mudar exige nova publicação (redeploy) na Vercel.
+
+**Homologação (sem tocar em produção)** — no ambiente Preview da Vercel, sem `VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY` (modo local: dados só no navegador, sem login nem sincronização; verificado — o build não contém o endereço do Supabase e só faz requisições à própria origem) e com `VITE_SCORING_V2_FROM` = hoje ou uma data passada. Testar em janela anônima, com um backup exportado da produção importado pelo Perfil. Não entrar na conta nesse navegador (o app pode oferecer importar os dados locais de teste).
+
+**Publicação e ativação**
+1. Publicar o `progressao` no `main` **sem** `VITE_SCORING_V2_FROM` em Production: produção ganha retrato, versão gravada e o código da v2, tudo calculado em v1. Observar ao menos um dia.
+2. Escolher D = dia do app seguinte ao da publicação da variável (nunca o dia em andamento nem anterior: o dia atual trocaria de regra no meio).
+3. Definir `VITE_SCORING_V2_FROM=D` em Production e publicar antes de D começar. A v2 vale a partir do início do dia D no Forja. O dia anterior, sua revisão da manhã e suas confirmações tardias seguem em v1.
+4. Recarregar o app no dia D (abas abertas antes rodam o código anterior até recarregar).
+
+**Reversão**
+- Planejada: `VITE_SCORING_V2_UNTIL=E` (E = próximo dia do app) e publicar — o dia em andamento termina na v2, os seguintes voltam à v1.
+- Emergência: remover `VITE_SCORING_V2_FROM` e publicar — o dia em andamento passa a v1 ao recarregar.
+- Em ambos: registros v2 continuam legíveis e recalculáveis pela versão gravada (a v2 nunca sai de `SCORING_STRATEGIES`); dias anteriores não são recalculados; sem migração.
 
 Faixas (`scoring/tiers.ts`): Lendário ≥ 9 · Ótimo ≥ 7,5 · Bom ≥ 6 · Regular ≥ 4 · Fraco < 4. A paleta é divergente (rosa ↔ cinza neutro ↔ rampa verde ordinal), validada para contraste e daltonismo.
 
@@ -238,4 +275,4 @@ Navegação inferior no celular, sidebar a partir de 768 px; bottom sheets no ce
 
 ## 9. Testes
 
-`npm test` cobre habilidades (evolução, manutenção, tolerância, fases de ferrugem, piso, maestria × retenção, recuperação, determinismo, vínculos com hábitos, prática avulsa, recompensas de nível), datas, ritmo de hábitos, agenda de tarefas, fórmula da nota, sequências, regras de XP, comandos (desfazer, meta semanal, encerrar/reabrir dia, auto-encerramento, confirmação tardia) e consistência dos dados de exemplo. `services/__tests__/progression-spec.test.ts` reúne os testes de aceitação da especificação de progressão (Foco parcial, evolução proporcional, manutenção válida e independente do peso, nota de dias sem plano, dias encerrados, recompensas de nível na confirmação tardia, conquistas consolidadas e determinismo do replay).
+`npm test` cobre habilidades (evolução, manutenção, tolerância, fases de ferrugem, piso, maestria × retenção, recuperação, determinismo, vínculos com hábitos, prática avulsa, recompensas de nível), datas, ritmo de hábitos, agenda de tarefas, fórmula da nota, sequências, regras de XP, comandos (desfazer, meta semanal, encerrar/reabrir dia, auto-encerramento, confirmação tardia) e consistência dos dados de exemplo. `domain/__tests__/scoring-v2.test.ts` (casos numéricos e propriedades da v2, 500 planos aleatórios com semente fixa) e `services/__tests__/scoring-v2-app.test.ts` (ativação, início do dia, encerramento, confirmação tardia v1/v2, reversão, persistência, recompensas e ritmo) cobrem a nota v2. `services/__tests__/progression-spec.test.ts` reúne os testes de aceitação da especificação de progressão (Foco parcial, evolução proporcional, manutenção válida e independente do peso, nota de dias sem plano, dias encerrados, recompensas de nível na confirmação tardia, conquistas consolidadas e determinismo do replay).

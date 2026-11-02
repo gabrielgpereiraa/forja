@@ -5,6 +5,8 @@ import type { ISODate } from '@/domain/date'
 import type { Task } from '@/domain/models/task'
 import { cn } from '@/lib/utils'
 import { dueLabel } from './task-format'
+import type { ScoreItemLabel } from '@/features/progress/score-items'
+import { ScoreValueChip } from '@/features/progress/ScoreValueChip'
 
 export function TaskRow({
   task,
@@ -14,6 +16,7 @@ export function TaskRow({
   locked,
   showDate = true,
   lateText,
+  valueLabel,
 }: {
   task: Task
   today: ISODate
@@ -22,6 +25,8 @@ export function TaskRow({
   locked?: boolean
   showDate?: boolean
   lateText?: string | null
+  /** Valor da tarefa na nota de hoje (nota v2). */
+  valueLabel?: ScoreItemLabel
 }) {
   const due = dueLabel(task, today)
   const overdue = due?.tone === 'danger'
@@ -61,6 +66,7 @@ export function TaskRow({
           </div>
         )}
       </button>
+      {valueLabel && <ScoreValueChip label={valueLabel} />}
     </div>
   )
 }

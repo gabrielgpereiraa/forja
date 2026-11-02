@@ -7,6 +7,7 @@ import type { TaskPriority } from '@/domain/models/task'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
 import { TaskDatePicker, TaskPriorityPicker } from './TaskDatePriority'
+import { withPlanFeedback } from '@/features/feedback/use-actions'
 
 /**
  * Adição rápida de tarefa: digitar + Enter. Data e prioridade aparecem como
@@ -36,7 +37,7 @@ export function TaskComposer({
   const submit = () => {
     const t = title.trim()
     if (!t) return
-    createTask({ title: t, dueDate: date, priority }, today)
+    withPlanFeedback(today, () => createTask({ title: t, dueDate: date, priority }, today))
     setTitle('')
     setPriority('normal')
     inputRef.current?.focus()

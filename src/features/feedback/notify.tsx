@@ -10,25 +10,38 @@ import { HABIT_ICONS, habitColorStyle } from '@/components/appearance'
 import type { Feedback } from '@/services/commands'
 import type { SkillFeedback } from '@/services/skill-sync'
 
-function XpChip({ amount }: { amount: number }) {
-  if (amount === 0) return null
+/** Recompensa efetivamente concedida: "+20 XP" ou "+10 Foco" (nada quando zero). */
+function RewardChip({ amount, kind }: { amount: number; kind: 'xp' | 'focus' }) {
+  if (amount === 0 || (kind === 'focus' && amount < 0)) return null
   return (
-    <span className="ml-auto shrink-0 rounded-md bg-xp/15 px-1.5 py-0.5 text-[12px] font-semibold text-xp tabular">
+    <span
+      className={
+        kind === 'xp'
+          ? 'shrink-0 rounded-md bg-xp/15 px-1.5 py-0.5 text-[12px] font-semibold text-xp tabular'
+          : 'shrink-0 rounded-md bg-primary/12 px-1.5 py-0.5 text-[12px] font-semibold text-primary tabular'
+      }
+    >
       {amount > 0 ? '+' : ''}
-      {amount} XP
+      {amount} {kind === 'xp' ? 'XP' : 'Foco'}
     </span>
   )
 }
 
-function Row({ icon, title, sub, xp }: { icon: ReactNode; title: string; sub?: string; xp?: number }) {
+/** Linha principal do aviso. `min-w-0 flex-1` (não `w-full`): divide a largura com o botão "Desfazer" sem empurrá-lo para fora. */
+function Row({ icon, title, sub, xp, focus }: { icon: ReactNode; title: string; sub?: string; xp?: number; focus?: number }) {
   return (
-    <div className="flex w-full items-center gap-3">
+    <div className="flex min-w-0 flex-1 items-center gap-3">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary [&_svg]:size-4">{icon}</span>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[14px] font-medium">{title}</div>
         {sub && <div className="truncate text-[12px] text-muted-foreground">{sub}</div>}
       </div>
-      {xp !== undefined && <XpChip amount={xp} />}
+      {(xp || focus) ? (
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {focus !== undefined && <RewardChip amount={focus} kind="focus" />}
+          {xp !== undefined && <RewardChip amount={xp} kind="xp" />}
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -56,7 +69,11 @@ function SkillStrip({ item }: { item: SkillFeedback }) {
   )
 }
 
-export function notifyFeedback(feedback: Feedback, opts: { title: string; sub?: string; undo?: () => void }) {
+/**
+ * Aviso de uma ação: mostra só o que foi concedido (XP de sessão/tarefa, Foco)
+ * e, quando informada, a variação da nota até agora (`note`) — que não é XP.
+ */
+export function notifyFeedback(feedback: Feedback, opts: { title: string; sub?: string; note?: string; undo?: () => void }) {
   const goal = feedback.events.includes('habit.weekly_goal_reached')
   const top = feedback.skills[0]
   toast.custom(
@@ -68,6 +85,7 @@ export function notifyFeedback(feedback: Feedback, opts: { title: string; sub?: 
             title={goal ? 'Meta semanal atingida!' : opts.title}
             sub={goal ? opts.title : opts.sub}
             xp={feedback.xp}
+            focus={feedback.focus}
           />
           {opts.undo && (
             <button
@@ -82,6 +100,7 @@ export function notifyFeedback(feedback: Feedback, opts: { title: string; sub?: 
             </button>
           )}
         </div>
+        {opts.note && <div className="mt-1.5 pl-11 text-[12px] text-muted-foreground tabular">{opts.note}</div>}
         {top && <SkillStrip item={top} />}
       </div>
     ),

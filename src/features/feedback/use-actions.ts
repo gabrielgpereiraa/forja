@@ -6,10 +6,46 @@ import { useCallback } from 'react'
 import { toast } from 'sonner'
 
 import type { ISODate } from '@/domain/date'
+import { buildDayOverview } from '@/domain/rules/day-overview'
+import { indexLogs } from '@/domain/rules/habit-schedule'
 import { useAppStore } from '@/store/app-store'
 import { formatAmount } from '@/features/habits/habit-format'
 import { formatNumber } from '@/lib/utils'
 import { notifyFeedback, notifyProgression } from './notify'
+
+/** Nota ao vivo de um dia aberto (para avisos); `null` se o dia já foi encerrado. */
+function liveDay(date: ISODate): { score: number | null; v2: boolean; planned: number } | null {
+  const s = useAppStore.getState()
+  if (s.records[date]) return null
+  const o = buildDayOverview({ date, habits: s.habits, logs: indexLogs(s.logs), tasks: s.tasks, record: null })
+  return { score: o.breakdown.score, v2: o.breakdown.version === 'v2', planned: o.totalItems }
+}
+
+const fmtScore = (s: number | null) => (s === null ? '—' : formatNumber(s, 1))
+
+/** Variação da nota até agora para o aviso (nota v2), com as notas já arredondadas como aparecem na tela. */
+function scoreNote(before: ReturnType<typeof liveDay>, after: ReturnType<typeof liveDay>): string | undefined {
+  if (!before || !after || !after.v2) return undefined
+  if (before.score === null && after.score === null) return undefined
+  return before.score === after.score ? `Nota até agora ${fmtScore(after.score)}` : `Nota até agora ${fmtScore(before.score)} → ${fmtScore(after.score)}`
+}
+
+/**
+ * Executa uma mudança de planejamento (criar/editar tarefa) e, na nota v2,
+ * avisa como o plano e a nota até agora mudaram — adicionar um item pendente
+ * pode reduzir a nota, e o aviso explica isso na hora.
+ */
+export function withPlanFeedback<T>(date: ISODate, change: () => T): T {
+  const before = liveDay(date)
+  const result = change()
+  const after = liveDay(date)
+  if (before && after && after.v2 && (before.planned !== after.planned || before.score !== after.score)) {
+    toast('Plano de hoje atualizado', {
+      description: `${before.planned} → ${after.planned} ${after.planned === 1 ? 'item' : 'itens'} · nota até agora ${fmtScore(before.score)} → ${fmtScore(after.score)}`,
+    })
+  }
+  return result
+}
 
 export function useHabitActions() {
   const toggleHabit = useAppStore((s) => s.toggleHabit)
@@ -21,12 +57,14 @@ export function useHabitActions() {
       const habit = store.habits.find((h) => h.id === habitId)
       const before = store.logs.find((l) => l.habitId === habitId && l.date === date)
       const prevValue = before?.value ?? 0
+      const dayBefore = liveDay(date)
       const fb = toggleHabit(habitId, date)
       if (!habit) return
       if (fb.xp > 0 || fb.events.includes('habit.session_completed')) {
         notifyFeedback(fb, {
           title: 'Hábito concluído',
           sub: habit.name,
+          note: scoreNote(dayBefore, liveDay(date)),
           undo: () => setHabitValue(habitId, date, prevValue),
         })
       } else {
@@ -41,14 +79,18 @@ export function useHabitActions() {
       const store = useAppStore.getState()
       const habit = store.habits.find((h) => h.id === habitId)
       const prevValue = store.logs.find((l) => l.habitId === habitId && l.date === date)?.value ?? 0
+      const dayBefore = liveDay(date)
       const fb = setHabitValue(habitId, date, value)
       if (!habit) return
+      const note = scoreNote(dayBefore, liveDay(date))
       if (fb.events.includes('habit.session_completed') || fb.events.includes('habit.weekly_goal_reached')) {
-        notifyFeedback(fb, { title: 'Hábito concluído', sub: habit.name, undo: () => setHabitValue(habitId, date, prevValue) })
+        notifyFeedback(fb, { title: 'Hábito concluído', sub: habit.name, note, undo: () => setHabitValue(habitId, date, prevValue) })
       } else if (value > prevValue && habit.target) {
+        // Parcial: sem XP de sessão; o aviso mostra o Foco concedido e a nota até agora.
         notifyFeedback(fb, {
           title: 'Progresso registrado',
           sub: `${habit.name} · ${formatAmount(value, habit.target.unit)}`,
+          note,
           undo: () => setHabitValue(habitId, date, prevValue),
         })
       } else notifyProgression(fb)
@@ -89,9 +131,15 @@ export function useTaskActions() {
     (taskId: string, today: ISODate) => {
       const task = useAppStore.getState().tasks.find((t) => t.id === taskId)
       if (!task) return
+      const dayBefore = liveDay(today)
       const fb = setTaskCompleted(taskId, !task.completed, today)
       if (!task.completed) {
-        notifyFeedback(fb, { title: 'Tarefa concluída', sub: task.title, undo: () => setTaskCompleted(taskId, false, today) })
+        notifyFeedback(fb, {
+          title: 'Tarefa concluída',
+          sub: task.title,
+          note: scoreNote(dayBefore, liveDay(today)),
+          undo: () => setTaskCompleted(taskId, false, today),
+        })
       }
     },
     [setTaskCompleted],

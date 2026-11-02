@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { CalendarCheck, ChevronDown, Flame, ListTodo, Plus, Repeat, X } from 'lucide-react'
 
 import { BrandMark } from '@/components/brand'
@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { addDays, capitalize, formatDate } from '@/domain/date'
 import { eligibleLateHabitIds } from '@/domain/rules/late-confirmation'
 import type { HabitDayState } from '@/domain/rules/habit-schedule'
+import { weeklyRhythm } from '@/domain/rules/weekly-rhythm'
+import { scoreItemKey, scoreItemLabel, scoreItemMap, type ScoreItemKind } from '@/features/progress/score-items'
 import { useDayOverview, useLateConfirmation, usePendingReview, usePlayer, useStreak } from '@/hooks/use-domain'
 import { useToday } from '@/hooks/use-today'
 import { cn, formatNumber } from '@/lib/utils'
@@ -25,6 +27,7 @@ import { ClosedDayCard } from './ClosedDayCard'
 import { CompleteDayModal } from './CompleteDayModal'
 import { DayHero } from './DayHero'
 import { LateConfirmationCard } from './LateConfirmationCard'
+import { WeeklyRhythmCard } from './WeeklyRhythmCard'
 import { YesterdayReview } from './YesterdayReview'
 
 function greeting(date = new Date()): string {
@@ -87,6 +90,16 @@ export function TodayPage() {
   const awaitsConfirmation = (st: HabitDayState) =>
     !st.doneToday && (lateEligible ? lateEligible.has(st.habit.id) : Boolean(st.habit.confirmNextDay))
   const score = overview.breakdown.score
+  // Nota v2: valor de cada item na nota de hoje e ritmo da semana como indicador próprio.
+  const items = useMemo(() => scoreItemMap(overview.breakdown), [overview.breakdown])
+  const valueLabel = (kind: ScoreItemKind, id: string) => {
+    const item = items?.get(scoreItemKey(kind, id))
+    return item ? scoreItemLabel(item) : undefined
+  }
+  const rhythm = useMemo(
+    () => (overview.breakdown.version === 'v2' ? weeklyRhythm([...overview.plannedHabits, ...overview.optionalHabits]) : null),
+    [overview],
+  )
   const showBrokenBanner = streak.status === 'broken' && dismissed !== today
   const optionalDone = overview.optionalHabits.filter((h) => h.doneToday).length
 
@@ -203,6 +216,7 @@ export function TodayPage() {
                       locked={closed}
                       onToggle={() => habitActions.toggle(s.habit.id, today)}
                       onOpen={() => openHabitLog(s.habit.id, today)}
+                      valueLabel={valueLabel('habit', s.habit.id)}
                     />
                   ))
                 )}
@@ -231,6 +245,7 @@ export function TodayPage() {
                           locked={closed}
                           onToggle={() => habitActions.toggle(s.habit.id, today)}
                           onOpen={() => openHabitLog(s.habit.id, today)}
+                          valueLabel={valueLabel('habit', s.habit.id)}
                         />
                       ))}
                   </div>
@@ -266,11 +281,19 @@ export function TodayPage() {
                     locked={closed}
                     onToggle={() => taskActions.toggle(item.task.id, today)}
                     onOpen={() => openTaskForm(item.task.id)}
+                    valueLabel={valueLabel('task', item.task.id)}
                   />
                 ))}
               </Surface>
             )}
+            {overview.breakdown.taskCap?.active && (
+              <p className="mt-2 px-1 text-[12px] text-muted-foreground">
+                Hoje há mais tarefas do que hábitos exigidos: as tarefas valem até metade da nota.
+              </p>
+            )}
           </section>
+
+          {rhythm && <WeeklyRhythmCard rhythm={rhythm} />}
 
           {!closed && (
             <Surface className="hidden items-center justify-between gap-4 p-4 lg:flex">

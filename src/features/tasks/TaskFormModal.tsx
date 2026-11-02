@@ -11,7 +11,7 @@ import { isTaskLocked } from '@/domain/rules/task-agenda'
 import { useToday } from '@/hooks/use-today'
 import { useAppStore } from '@/store/app-store'
 import { useUiStore } from '@/store/ui-store'
-import { useTaskActions } from '@/features/feedback/use-actions'
+import { useTaskActions, withPlanFeedback } from '@/features/feedback/use-actions'
 import { TaskDatePicker, TaskPriorityPicker } from './TaskDatePriority'
 
 export function TaskFormModal() {
@@ -40,8 +40,8 @@ export function TaskFormModal() {
   const valid = form.title.trim().length > 0
   const save = () => {
     if (!valid) return
-    if (editing) updateTask(editing.id, form)
-    else createTask(form, today)
+    // Nota v2: avisa como o plano e a nota até agora mudaram (criar, remarcar ou mudar prioridade).
+    withPlanFeedback(today, () => (editing ? updateTask(editing.id, form) : createTask(form, today)))
     close()
   }
 

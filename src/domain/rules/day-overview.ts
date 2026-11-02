@@ -7,7 +7,7 @@ import type { ISODate } from '../date'
 import type { DailyRecord, DayScoringSnapshot } from '../models/day'
 import type { Habit, HabitLog } from '../models/habit'
 import type { Task } from '../models/task'
-import { computeDayScore, type ScoreBreakdown, type ScoringStrategy } from '../scoring'
+import { computeDayScore, strategyForDay, type ScoreBreakdown, type ScoringStrategy } from '../scoring'
 import { getHabitsForDay, type HabitDayState, type LogIndex } from './habit-schedule'
 import { getTasksForDay, type TaskDayItem } from './task-agenda'
 
@@ -61,7 +61,8 @@ export function buildDayOverview({ date, habits, logs, tasks, record }: DayOverv
   const tasksDone = countedTasks.filter((t) => t.doneOnDay).length
   const totalItems = plannedHabits.length + countedTasks.length
   const doneItems = habitsDone + tasksDone
-  const breakdown = record?.breakdown ?? computeDayScore({ date, habits: states, tasks: taskItems })
+  // Dia encerrado: o detalhamento gravado. Aberto: a estratégia do dia (v1 ou v2 pela data de ativação).
+  const breakdown = record?.breakdown ?? computeDayScore({ date, ...scoringSnapshotOf(states, taskItems) }, strategyForDay(date))
 
   let phase: DayPhase
   if (record) phase = 'closed'
@@ -98,11 +99,12 @@ export function createDailyRecord(
    * momento de confirmar, e o que ficou desmarcado conta como não cumprido.
    */
   lateWindow = true,
-  /** Estratégia da nota. Padrão: a ativa (encerramento). Recálculos passam a do registro. */
-  strategy?: ScoringStrategy,
+  /** Estratégia da nota. Padrão: a do dia (data de ativação). Recálculos passam a do registro. */
+  strategy: ScoringStrategy = strategyForDay(overview.date),
 ): DailyRecord {
   const states = [...overview.plannedHabits, ...overview.optionalHabits]
-  const breakdown = computeDayScore({ date: overview.date, habits: states, tasks: overview.tasks }, strategy)
+  const snapshot = scoringSnapshotOf(states, overview.tasks)
+  const breakdown = computeDayScore({ date: overview.date, ...snapshot }, strategy)
   return {
     date: overview.date,
     score: breakdown.score,
@@ -114,7 +116,7 @@ export function createDailyRecord(
     closedAt,
     closedBy,
     awaitingConfirmation: lateWindow ? states.filter((s) => s.habit.confirmNextDay && !s.doneToday).map((s) => s.habit.id) : [],
-    scoringSnapshot: scoringSnapshotOf(states, overview.tasks),
+    scoringSnapshot: snapshot,
   }
 }
 

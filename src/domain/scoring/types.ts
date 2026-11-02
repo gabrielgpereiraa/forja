@@ -7,6 +7,7 @@
  * reescrever o histórico — cada `DailyRecord` guarda a versão usada.
  */
 import type { ISODate } from '../date'
+import type { ID } from '../models/ids'
 import type { TaskPriority } from '../models/task'
 import type { HabitRequirement } from '../rules/habit-schedule'
 import type { TaskDayRole } from '../rules/task-agenda'
@@ -32,6 +33,26 @@ export interface ScoreAdjustment {
   kind: 'bonus' | 'penalty'
 }
 
+/**
+ * Um item do plano no detalhamento (v2): quanto vale na nota base e quanto já
+ * rendeu. Opcionais e tarefas adiantadas aparecem com `role` de bônus e valor
+ * igual ao bônus máximo do item (antes do limite do dia).
+ */
+export interface ScoreItem {
+  kind: 'habit' | 'task'
+  /** Id do hábito/tarefa; `null` só em entradas antigas sem id. */
+  id: ID | null
+  role: 'required' | 'optional' | 'due' | 'overdue' | 'early'
+  /** Unidades no plano (hábito exigido 1; tarefa = peso da prioridade); 0 nos bônus. */
+  units: number
+  /** Pontos na nota base quando concluído (exato, sem arredondar). */
+  value: number
+  /** Pontos já rendidos (exato). */
+  earned: number
+  /** Progresso do item (0–1). */
+  progress: number
+}
+
 export interface ScoreBreakdown {
   version: string
   /** Nota final (0–10, uma casa) ou `null` quando não havia nada planejado. */
@@ -44,6 +65,10 @@ export interface ScoreBreakdown {
   completion: number
   /** Frases prontas para explicar a nota. */
   highlights: string[]
+  /** v2: itens do plano e bônus, com valor e ganho de cada um. */
+  items?: ScoreItem[]
+  /** v2: fator do teto das tarefas (`k`); `active` quando as tarefas foram limitadas a 50%. */
+  taskCap?: { k: number; active: boolean }
 }
 
 /**
@@ -53,6 +78,8 @@ export interface ScoreBreakdown {
  * recalcular dias encerrados.
  */
 export interface ScoringHabit {
+  /** Id do hábito (presente no retrato e na nota ao vivo; usado pelo detalhamento v2). */
+  habitId?: ID
   requirement: HabitRequirement
   doneToday: boolean
   /** Progresso da sessão (0–1). */
@@ -62,6 +89,8 @@ export interface ScoringHabit {
 
 /** O que uma estratégia pode ler de uma tarefa no dia (`TaskDayItem` atende por estrutura). */
 export interface ScoringTask {
+  /** Id da tarefa (presente no retrato e na nota ao vivo; usado pelo detalhamento v2). */
+  taskId?: ID
   role: TaskDayRole
   doneOnDay: boolean
   task: { priority: TaskPriority }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, ListTodo, Repeat, Star } from 'lucide-react'
 
 import { HabitGlyph, habitColorStyle } from '@/components/appearance'
@@ -7,7 +7,9 @@ import { ProgressBar } from '@/components/progress/progress-bar'
 import { ScorePill } from '@/components/score'
 import { Button } from '@/components/ui/button'
 import { addDays, capitalize, formatDate, startOfWeek, type ISODate } from '@/domain/date'
-import { useWeekOverview } from '@/hooks/use-domain'
+import { useDayOverview, useWeekOverview } from '@/hooks/use-domain'
+import { weeklyRhythm } from '@/domain/rules/weekly-rhythm'
+import { WeeklyRhythmCard } from '@/features/today/WeeklyRhythmCard'
 import { formatScore, pluralize } from '@/lib/utils'
 import { useUiStore } from '@/store/ui-store'
 import { WeekStrip } from '@/features/habits/WeekStrip'
@@ -20,6 +22,15 @@ export function WeekView({ today }: { today: ISODate }) {
   const openDayDetail = useUiStore((s) => s.openDayDetail)
   const isCurrent = weekStart === startOfWeek(today)
   const sel = week.days.find((d) => d.date === selected) ?? null
+  // Nota v2: ritmo da semana atual como indicador próprio (fora da nota).
+  const todayOverview = useDayOverview(today)
+  const rhythm = useMemo(
+    () =>
+      isCurrent && todayOverview.breakdown.version === 'v2'
+        ? weeklyRhythm([...todayOverview.plannedHabits, ...todayOverview.optionalHabits])
+        : null,
+    [isCurrent, todayOverview],
+  )
 
   const range = `${formatDate(weekStart, 'd MMM')} – ${formatDate(addDays(weekStart, 6), 'd MMM')}`
 
@@ -43,6 +54,8 @@ export function WeekView({ today }: { today: ISODate }) {
         <StatTile icon={Repeat} label="Sessões" value={`${week.sessionsDone}/${week.sessionsGoal}`} />
         <StatTile icon={ListTodo} label="Tarefas" value={`${week.tasksDone}/${week.tasksTotal}`} />
       </div>
+
+      {rhythm && <WeeklyRhythmCard rhythm={rhythm} />}
 
       <Surface className="p-4">
         <div className="mb-4 flex items-center justify-between">
