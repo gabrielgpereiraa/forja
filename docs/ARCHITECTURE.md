@@ -109,11 +109,12 @@ A estratégia de um dia **aberto** é decidida pela data de produtividade (que j
 | --- | --- |
 | `VITE_SCORING_V2_FROM=AAAA-MM-DD` | v2 a partir desse dia do app (inclusivo). Ausente → tudo em v1. |
 | `VITE_SCORING_V2_UNTIL=AAAA-MM-DD` | opcional: volta à v1 a partir desse dia (exclusivo), para reverter sem trocar a regra de um dia em andamento. |
+| `VITE_DATA_MODE=local` | força o modo local (sem Supabase, sem login nem sincronização) mesmo com as variáveis do Supabase presentes — para a homologação no Preview (`lib/data-mode.ts`). |
 | `VERCEL_ENV` → `VITE_VERCEL_ENV` | preenchida no build (`vite.config.ts`). **Trava**: com Supabase configurado, a v2 só liga em `production`; prévia conectada ao Supabase ignora a data (aviso no console). |
 
 São variáveis de **build**: mudar exige nova publicação (redeploy) na Vercel.
 
-**Homologação (sem tocar em produção)** — no ambiente Preview da Vercel, sem `VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY` (modo local: dados só no navegador, sem login nem sincronização; verificado — o build não contém o endereço do Supabase e só faz requisições à própria origem) e com `VITE_SCORING_V2_FROM` = hoje ou uma data passada. Testar em janela anônima, com um backup exportado da produção importado pelo Perfil. Não entrar na conta nesse navegador (o app pode oferecer importar os dados locais de teste).
+**Homologação (sem tocar em produção)** — no ambiente Preview da Vercel, `VITE_DATA_MODE=local` e `VITE_SCORING_V2_FROM` = hoje ou uma data passada, ambas do tipo **Config** e só em Preview (a Vercel exige o tipo Config para variáveis com prefixo `VITE_`; as do Supabase, criadas como Secret, não podem ter o ambiente alterado e ficam como estão). Modo local: dados só no navegador, sem login nem sincronização — verificado com as variáveis do Supabase presentes: só há requisições à própria origem. Testar em janela anônima, com um backup exportado da produção importado pelo Perfil. Não entrar na conta nesse navegador (o app pode oferecer importar os dados locais de teste).
 
 **Publicação e ativação**
 1. Publicar o `progressao` no `main` **sem** `VITE_SCORING_V2_FROM` em Production: produção ganha retrato, versão gravada e o código da v2, tudo calculado em v1. Observar ao menos um dia.
