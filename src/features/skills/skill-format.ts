@@ -71,7 +71,7 @@ export function explainStatus(skill: Pick<Skill, 'name'>, s: SkillSnapshot): { t
       const need = sessionsNeeded(s)
       return {
         title: `${skill.name} está enferrujando`,
-        body: `${s.daysSinceLast} dias sem praticar e ${window}. A condição cai devagar${
+        body: `${s.daysSinceValid} dias sem uma sessão válida e ${window}. A condição cai devagar${
           s.mastery >= 20 ? ` — sua maestria (${Math.round(s.mastery)}) segura boa parte da perda` : ''
         }. Nível e maestria continuam seus. ${need === 1 ? 'Uma sessão' : `${need} sessões`} esta semana ${need === 1 ? 'já recupera' : 'recuperam'} a condição.`,
       }

@@ -61,6 +61,14 @@ export interface SkillPractice {
   intensity: number
   /** Peso da contribuição do hábito para esta habilidade (1 = 100%). */
   weight: number
+  /**
+   * Versão das regras de cálculo. Ausente = v1 (práticas anteriores à
+   * evolução proporcional): mantêm a fórmula antiga e sempre contam para
+   * manutenção. v2: esforço proporcional à meta e critério de prática válida.
+   */
+  rulesVersion?: 2
+  /** v2: meta da sessão do hábito (minutos) vigente na data da prática. */
+  targetMinutes?: number | null
   /** Origem: hábito/registro que gerou a prática (null = prática avulsa). */
   sourceHabitId: ID | null
   sourceLogId: ID | null

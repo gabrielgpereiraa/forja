@@ -133,11 +133,11 @@ export function logSkillPractice(data: AppData, skillId: string, input: Practice
     const current = data.logs.find((l) => l.habitId === habit.id && l.date === date)?.value ?? 0
     if (h.target?.unit === 'minutes') {
       const value = input.duration ? current + input.duration : Math.max(current, h.target.amount)
-      return { ...cmd.setHabitValue(data, habit.id, date, value), via: 'habit' }
+      return { ...cmd.setHabitValue(data, habit.id, date, value, date), via: 'habit' }
     }
     if (!h.target) {
       // Hábito sem meta: concluir o dia, e a duração vira prática avulsa adicional.
-      const done = current > 0 ? { data, feedback: emptyFeedback() } : cmd.setHabitValue(data, habit.id, date, 1)
+      const done = current > 0 ? { data, feedback: emptyFeedback() } : cmd.setHabitValue(data, habit.id, date, 1, date)
       if (!input.duration) return { ...done, via: 'habit' }
       const extra = addStandalonePractice(done.data, skill, input, date)
       return { data: extra.data, feedback: { ...done.feedback, skills: extra.feedback.skills }, via: 'habit' }

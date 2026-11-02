@@ -49,6 +49,8 @@ export type LedgerDraft = Omit<LedgerEntry, 'id' | 'createdAt'>
 
 export type GameEvent =
   | { type: 'habit.session_completed'; habit: Habit; log: HabitLog; date: ISODate }
+  /** Registro com valor > 0 (parcial ou concluído) — base do Foco. */
+  | { type: 'habit.progress_recorded'; habit: Habit; log: HabitLog; date: ISODate }
   | { type: 'habit.weekly_goal_reached'; habit: Habit; weekStart: ISODate; date: ISODate }
   | { type: 'task.completed'; task: Task; date: ISODate }
   | { type: 'day.closed'; record: DailyRecord; streak: number; date: ISODate }

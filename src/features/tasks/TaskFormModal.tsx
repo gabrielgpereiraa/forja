@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import type { TaskInput } from '@/domain/models/task'
+import { isTaskLocked } from '@/domain/rules/task-agenda'
 import { useToday } from '@/hooks/use-today'
 import { useAppStore } from '@/store/app-store'
 import { useUiStore } from '@/store/ui-store'
@@ -17,6 +18,7 @@ export function TaskFormModal() {
   const state = useUiStore((s) => s.taskForm)
   const close = useUiStore((s) => s.closeTaskForm)
   const tasks = useAppStore((s) => s.tasks)
+  const records = useAppStore((s) => s.records)
   const createTask = useAppStore((s) => s.createTask)
   const updateTask = useAppStore((s) => s.updateTask)
   const { remove, toggle } = useTaskActions()
@@ -59,6 +61,8 @@ export function TaskFormModal() {
               <Button
                 variant="ghost"
                 className="flex-1 text-muted-foreground"
+                disabled={isTaskLocked(editing, records, today)}
+                title={isTaskLocked(editing, records, today) ? 'Dia encerrado' : undefined}
                 onClick={() => {
                   toggle(editing.id, today)
                   close()

@@ -51,12 +51,10 @@ describe('gamificação', () => {
     const h = habit({ category: 'creative', target: { amount: 30, unit: 'minutes' } })
     const l = log(h.id, '2026-10-05', 30)
     const drafts = evaluateEvent({ type: 'habit.session_completed', habit: h, log: l, date: '2026-10-05' })
-    expect(drafts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ resource: 'xp', amount: 20, attribute: 'creativity', sourceKey: `habitLog:${l.id}` }),
-        expect.objectContaining({ resource: 'focus', amount: 30 }),
-      ]),
-    )
+    expect(drafts).toEqual([expect.objectContaining({ resource: 'xp', amount: 20, attribute: 'creativity', sourceKey: `habitLog:${l.id}` })])
+    // Foco vem do registro (concluído ou parcial), não da conclusão.
+    const focus = evaluateEvent({ type: 'habit.progress_recorded', habit: h, log: log(h.id, '2026-10-05', 15), date: '2026-10-05' })
+    expect(focus).toEqual([expect.objectContaining({ resource: 'focus', amount: 15 })])
   })
   it('tarefa de prioridade alta vale mais', () => {
     const drafts = evaluateEvent({ type: 'task.completed', task: task({ priority: 'high' }), date: '2026-10-05' })

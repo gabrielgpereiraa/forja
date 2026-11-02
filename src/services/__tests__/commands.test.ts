@@ -40,9 +40,11 @@ describe('comandos', () => {
     const partial = cmd.setHabitValue(data, habit.id, TODAY, 15)
     expect(partial.data.logs[0]?.completed).toBe(false)
     expect(partial.feedback.xp).toBe(0)
+    expect(partial.feedback.focus).toBe(15)
     const full = cmd.setHabitValue(partial.data, habit.id, TODAY, 30)
     expect(full.feedback.xp).toBe(20)
-    expect(full.feedback.focus).toBe(30)
+    expect(full.feedback.focus).toBe(15)
+    expect(sumResource(full.data.ledger, 'focus')).toBe(30)
   })
 
   it('encerrar dia grava snapshot, bloqueia edição e pode ser reaberto', () => {

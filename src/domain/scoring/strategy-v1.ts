@@ -105,8 +105,10 @@ function compute(input: ScoringInput): ScoreBreakdown {
   }
 
   const active = components.filter((c) => !c.skipped)
-  // Ritmo sozinho não justifica uma nota: exige hábitos ou tarefas no dia.
-  const hasPlan = active.some((c) => c.id !== 'rhythm') || extras > 0 || early > 0
+  // Nota exige planejamento: hábitos obrigatórios ou tarefas do dia/atrasadas.
+  // Ritmo sozinho, hábitos extras e tarefas adiantadas não transformam um dia
+  // neutro em dia com nota (os extras mantêm só suas recompensas próprias).
+  const hasPlan = active.some((c) => c.id !== 'rhythm')
   if (!hasPlan) {
     return { version: 'v1', score: null, base: null, components, adjustments: [], completion: 0, highlights: [] }
   }

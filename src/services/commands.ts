@@ -14,11 +14,12 @@ import type { DailyRecord, LateConfirmation } from '@/domain/models/day'
 import type { Habit, HabitInput, HabitLog } from '@/domain/models/habit'
 import { createId } from '@/domain/models/ids'
 import type { Task, TaskInput } from '@/domain/models/task'
+import { isTaskLocked } from '@/domain/rules/task-agenda'
 import { buildDayOverview, createDailyRecord } from '@/domain/rules/day-overview'
 import { getWeekProgress, indexLogs, isSessionComplete, sessionTargetOf } from '@/domain/rules/habit-schedule'
 import { applyGoalChange, habitForDate } from '@/domain/rules/habit-goal-history'
 import type { GoalProposal } from '@/domain/rules/habit-progression'
-import { eligibleLateHabitIds, lateConfirmationCandidates } from '@/domain/rules/late-confirmation'
+import { eligibleLateHabitIds, isWithinLateWindow, lateConfirmationCandidates } from '@/domain/rules/late-confirmation'
 import { computePlayerStats } from '@/domain/rules/stats'
 import { computeStreak } from '@/domain/rules/streaks'
 import type { AppData } from './app-data'
@@ -57,9 +58,9 @@ function withoutSource(ledger: LedgerEntry[], sourceKey: string): LedgerEntry[] 
 
 /**
  * Pós-processamento comum: calcula variação de XP/foco, nível e conquistas
- * recém-desbloqueadas.
+ * recém-desbloqueadas. `today` é o dia de produtividade de referência.
  */
-function finalize(prev: AppData, next: AppData, date: ISODate, feedback: Feedback): CommandResult {
+function finalize(prev: AppData, next: AppData, today: ISODate, feedback: Feedback): CommandResult {
   const prevXp = sumResource(prev.ledger, 'xp')
   const nextXp = sumResource(next.ledger, 'xp')
   feedback.xp = nextXp - prevXp
@@ -68,28 +69,56 @@ function finalize(prev: AppData, next: AppData, date: ISODate, feedback: Feedbac
   const nextLevel = getLevelInfo(nextXp).level
   if (nextLevel > prevLevel) feedback.levelUp = nextLevel
 
-  const stats = computePlayerStats({
-    today: date,
-    habits: next.habits,
-    logs: next.logs,
-    logIndex: indexLogs(next.logs),
-    tasks: next.tasks,
-    records: next.records,
-    ledger: next.ledger,
-  })
-  const unlocked = findNewlyUnlocked(stats, new Set(Object.keys(next.achievements)))
-  if (unlocked.length) {
-    const at = nowTimestamp()
-    next = {
-      ...next,
-      achievements: {
-        ...next.achievements,
-        ...Object.fromEntries(unlocked.map((a) => [a.id, { id: a.id, unlockedAt: at, date }])),
-      },
-    }
-    feedback.achievements = unlocked
+  const unlocked = unlockAchievements(next, today)
+  if (unlocked.unlocked.length) {
+    next = unlocked.data
+    feedback.achievements = unlocked.unlocked
   }
   return { data: next, feedback }
+}
+
+/**
+ * Estado consolidado: o que já não pode mais mudar. Confirmações tardias
+ * ainda desfazíveis (o dia encerrado ainda é "ontem") são revertidas aqui —
+ * conquistas que dependem delas aguardam a janela fechar.
+ */
+export function consolidatedData(data: AppData, today: ISODate): AppData {
+  let next = data
+  for (const record of Object.values(data.records)) {
+    if (!record?.lateConfirmations?.length || !isWithinLateWindow(record.date, today)) continue
+    for (const c of record.lateConfirmations) {
+      const undone = applyLateConfirmation(next, c.habitId, record.date, today, false)
+      if (undone) next = undone.data
+    }
+  }
+  return next
+}
+
+/**
+ * Desbloqueia (de forma definitiva) as conquistas atingidas pelos dados
+ * consolidados. Conquistas já desbloqueadas nunca são removidas.
+ */
+export function unlockAchievements(data: AppData, today: ISODate): { data: AppData; unlocked: AchievementDefinition[] } {
+  const base = consolidatedData(data, today)
+  const stats = computePlayerStats({
+    today,
+    habits: base.habits,
+    logs: base.logs,
+    logIndex: indexLogs(base.logs),
+    tasks: base.tasks,
+    records: base.records,
+    ledger: base.ledger,
+  })
+  const unlocked = findNewlyUnlocked(stats, new Set(Object.keys(data.achievements)))
+  if (!unlocked.length) return { data, unlocked }
+  const at = nowTimestamp()
+  return {
+    data: {
+      ...data,
+      achievements: { ...data.achievements, ...Object.fromEntries(unlocked.map((a) => [a.id, { id: a.id, unlockedAt: at, date: today }])) },
+    },
+    unlocked,
+  }
 }
 
 /* ------------------------------ Perfil ------------------------------ */
@@ -188,15 +217,36 @@ export function deleteHabit(data: AppData, id: string, today: ISODate): AppData 
 /**
  * Define o valor registrado de um hábito em um dia (valor absoluto).
  * `0` remove o registro. Gera/reverte recompensas automaticamente.
+ *
+ * `today` (dia de produtividade atual) ativa a restrição de datas: só hoje
+ * pode ser registrado livremente; ontem ainda aberto aceita apenas hábitos com
+ * "Confirmar na manhã seguinte". Sem `today` (dados de exemplo, importação),
+ * só o bloqueio de dia encerrado vale.
  */
-export function setHabitValue(data: AppData, habitId: string, date: ISODate, value: number): CommandResult {
+export function setHabitValue(data: AppData, habitId: string, date: ISODate, value: number, today?: ISODate): CommandResult {
   // Dia encerrado é somente leitura (exceção controlada: `confirmLateHabit`).
   if (data.records[date]) return { data, feedback: emptyFeedback() }
-  return writeHabitValue(data, habitId, date, value)
+  if (today && !canWriteHabitOn(data, habitId, date, today)) return { data, feedback: emptyFeedback() }
+  return writeHabitValue(data, habitId, date, value, today ?? date)
+}
+
+/** Restrição de datas para registros do usuário (sem edição retroativa genérica). */
+export function canWriteHabitOn(data: AppData, habitId: string, date: ISODate, today: ISODate): boolean {
+  if (data.records[date]) return false
+  if (date === today) return true
+  // Revisão da manhã: ontem ainda aberto, só hábitos marcados para confirmar depois.
+  if (date === addDays(today, -1)) return Boolean(data.habits.find((h) => h.id === habitId)?.confirmNextDay)
+  return false
 }
 
 /** Grava o valor sem checar o bloqueio do dia — uso interno dos comandos. */
-function writeHabitValue(data: AppData, habitId: string, date: ISODate, value: number): CommandResult {
+function writeHabitValue(data: AppData, habitId: string, date: ISODate, value: number, today: ISODate): CommandResult {
+  const res = applyHabitValue(data, habitId, date, value, today)
+  return res.data === data ? res : finalize(data, res.data, today, res.feedback)
+}
+
+/** Núcleo puro de `writeHabitValue` (sem conquistas). */
+function applyHabitValue(data: AppData, habitId: string, date: ISODate, value: number, today: ISODate): CommandResult {
   const feedback = emptyFeedback()
   const habit = data.habits.find((h) => h.id === habitId)
   if (!habit) return { data, feedback }
@@ -220,9 +270,12 @@ function writeHabitValue(data: AppData, habitId: string, date: ISODate, value: n
     logs = existing ? logs.map((l) => (l.id === log.id ? log : l)) : [...logs, log]
     current = log
     ledger = withoutSource(ledger, `habitLog:${log.id}`)
+    // Foco do valor atual (substitui o anterior: editar não acumula).
+    const h = habitForDate(habit, date)
+    ledger = [...ledger, ...toEntries(evaluateEvent({ type: 'habit.progress_recorded', habit: h, log, date }))]
     if (completed) {
       // Recompensa calculada com a meta vigente naquela semana.
-      const event: GameEvent = { type: 'habit.session_completed', habit: habitForDate(habit, date), log, date }
+      const event: GameEvent = { type: 'habit.session_completed', habit: h, log, date }
       ledger = [...ledger, ...toEntries(evaluateEvent(event))]
       if (!existing?.completed) feedback.events.push(event.type)
     }
@@ -247,20 +300,22 @@ function writeHabitValue(data: AppData, habitId: string, date: ISODate, value: n
   const logId = current?.id ?? existing?.id
   if (links.length > 0 && logId) {
     const practices = replaceLogPractices(data.skillPractices, habit, logId, current, links)
-    const res = commitSkillChanges(next, practices, links.map((l) => l.skillId), date, new Map(links.map((l) => [l.skillId, l.weight])))
+    // Recompensas de nível seguem o replay até hoje (não até a data do registro).
+    const asOf = today > date ? today : date
+    const res = commitSkillChanges(next, practices, links.map((l) => l.skillId), asOf, new Map(links.map((l) => [l.skillId, l.weight])))
     next = res.data
     feedback.skills = res.feedback
   }
 
-  return finalize(data, next, date, feedback)
+  return { data: next, feedback }
 }
 
 /** Alterna a sessão do dia: concluída ↔ vazia. */
-export function toggleHabit(data: AppData, habitId: string, date: ISODate): CommandResult {
+export function toggleHabit(data: AppData, habitId: string, date: ISODate, today?: ISODate): CommandResult {
   const habit = data.habits.find((h) => h.id === habitId)
   if (!habit) return { data, feedback: emptyFeedback() }
   const log = data.logs.find((l) => l.habitId === habitId && l.date === date)
-  return setHabitValue(data, habitId, date, log?.completed ? 0 : Math.max(sessionTargetOf(habit, date), log?.value ?? 0))
+  return setHabitValue(data, habitId, date, log?.completed ? 0 : Math.max(sessionTargetOf(habit, date), log?.value ?? 0), today)
 }
 
 /* ------------------------------ Tarefas ------------------------------ */
@@ -294,20 +349,32 @@ export function updateTask(data: AppData, id: string, input: TaskInput): AppData
   }
 }
 
-export function setTaskCompleted(data: AppData, id: string, completed: boolean, today: ISODate): CommandResult {
+/**
+ * Conclui/reabre uma tarefa em `date`. Dias encerrados são somente leitura:
+ * não se conclui tarefa num dia encerrado nem se reabre uma concluída nele.
+ * `today` (dia de produtividade atual) impede concluir em outra data.
+ */
+export function setTaskCompleted(data: AppData, id: string, completed: boolean, date: ISODate, today?: ISODate): CommandResult {
   const feedback = emptyFeedback()
   const task = data.tasks.find((t) => t.id === id)
   if (!task || task.completed === completed) return { data, feedback }
+  if (!canChangeTask(data, task, completed, date, today)) return { data, feedback }
   const updated: Task = completed
-    ? { ...task, completed: true, completedAt: nowTimestamp(), completedOn: today }
+    ? { ...task, completed: true, completedAt: nowTimestamp(), completedOn: date }
     : { ...task, completed: false, completedAt: null, completedOn: null }
   let ledger = withoutSource(data.ledger, `task:${task.id}`)
   if (completed) {
-    const event: GameEvent = { type: 'task.completed', task: updated, date: today }
+    const event: GameEvent = { type: 'task.completed', task: updated, date }
     ledger = [...ledger, ...toEntries(evaluateEvent(event))]
     feedback.events.push(event.type)
   }
-  return finalize(data, { ...data, tasks: data.tasks.map((t) => (t.id === id ? updated : t)), ledger }, today, feedback)
+  return finalize(data, { ...data, tasks: data.tasks.map((t) => (t.id === id ? updated : t)), ledger }, today ?? date, feedback)
+}
+
+/** Uma tarefa pode mudar de estado sem alterar um dia encerrado? */
+export function canChangeTask(data: AppData, task: Task, completed: boolean, date: ISODate, today?: ISODate): boolean {
+  if (isTaskLocked(task, data.records, date)) return false
+  return !completed || !today || date === today
 }
 
 export function deleteTask(data: AppData, id: string): { data: AppData; removed: Task | null; entries: LedgerEntry[] } {
@@ -363,10 +430,15 @@ function rewardDay(ledger: LedgerEntry[], records: AppData['records'], date: ISO
  * sequência). O dia continua encerrado; nada além disso pode mudar.
  */
 export function confirmLateHabit(data: AppData, habitId: string, date: ISODate, today: ISODate, done: boolean): CommandResult {
-  const none = { data, feedback: emptyFeedback() }
+  const res = applyLateConfirmation(data, habitId, date, today, done)
+  return res ? finalize(data, res.data, today, res.feedback) : { data, feedback: emptyFeedback() }
+}
+
+/** Núcleo puro da confirmação tardia (sem conquistas). `null` = não permitido. */
+function applyLateConfirmation(data: AppData, habitId: string, date: ISODate, today: ISODate, done: boolean): CommandResult | null {
   const record = data.records[date]
   const habit = data.habits.find((h) => h.id === habitId)
-  if (!record || !habit) return none
+  if (!record || !habit) return null
   const candidates = lateConfirmationCandidates(record, data.habits, indexLogs(data.logs), today)
   const log = data.logs.find((l) => l.habitId === habitId && l.date === date)
   const confirmations = record.lateConfirmations ?? []
@@ -374,18 +446,18 @@ export function confirmLateHabit(data: AppData, habitId: string, date: ISODate, 
   let nextConfirmations: LateConfirmation[]
   let value: number
   if (done) {
-    if (!candidates.pending.includes(habitId)) return none
+    if (!candidates.pending.includes(habitId)) return null
     const previousValue = log?.value ?? 0
     value = Math.max(sessionTargetOf(habit, date), previousValue)
     nextConfirmations = [...confirmations, { habitId, confirmedAt: nowTimestamp(), previousValue }]
   } else {
     const entry = confirmations.find((c) => c.habitId === habitId)
-    if (!entry || !candidates.confirmed.includes(habitId)) return none
+    if (!entry || !candidates.confirmed.includes(habitId)) return null
     value = entry.previousValue
     nextConfirmations = confirmations.filter((c) => c.habitId !== habitId)
   }
 
-  const written = writeHabitValue(data, habitId, date, value)
+  const written = applyHabitValue(data, habitId, date, value, today)
   let next = written.data
   const overview = buildDayOverview({ date, habits: next.habits, logs: indexLogs(next.logs), tasks: next.tasks, record: null })
   const rescored: DailyRecord = {
@@ -403,7 +475,7 @@ export function confirmLateHabit(data: AppData, habitId: string, date: ISODate, 
   const feedback = written.feedback
   feedback.record = rescored
   feedback.streak = computeStreak(records, today).current
-  return finalize(data, next, date, feedback)
+  return { data: next, feedback }
 }
 
 export function reopenDay(data: AppData, date: ISODate): AppData {
@@ -442,5 +514,7 @@ export function autoCloseMissedDays(data: AppData, today: ISODate, maxDays = 60)
     if (d === yesterday && isPendingReview(next, d, today)) continue
     next = closeDay(next, d, 'auto').data
   }
-  return next
+  // Conquistas que aguardavam a consolidação (ex.: confirmações tardias de
+  // anteontem) são validadas ao abrir o app.
+  return unlockAchievements(next, today).data
 }

@@ -80,3 +80,12 @@ export function bucketOf(task: Task, today: ISODate): TaskBucket {
   if (task.dueDate <= today) return 'today'
   return 'upcoming'
 }
+
+/**
+ * Dias encerrados são somente leitura: com o dia `date` encerrado não se
+ * conclui tarefa nele, e uma tarefa concluída num dia encerrado não é reaberta.
+ */
+export function isTaskLocked(task: Task, closedDays: { readonly [date: string]: unknown }, date: ISODate): boolean {
+  if (task.completed) return Boolean(task.completedOn && closedDays[task.completedOn])
+  return Boolean(closedDays[date])
+}

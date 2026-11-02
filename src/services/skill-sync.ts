@@ -38,6 +38,9 @@ export function practicesFromLog(habit: Habit, log: HabitLog, links: readonly Ha
       unit,
       intensity,
       weight: l.weight,
+      // Regras v2: esforço proporcional à meta vigente na data e critério de prática válida.
+      rulesVersion: 2 as const,
+      targetMinutes: isTime ? h.target!.amount : null,
       sourceHabitId: habit.id,
       sourceLogId: log.id,
       createdAt: nowTimestamp(),

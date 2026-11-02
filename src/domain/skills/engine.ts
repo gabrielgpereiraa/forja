@@ -22,14 +22,35 @@ import { SKILL_CONFIG, type SkillConfig } from './config'
 /*  Funções elementares (cada regra isolada e testável)               */
 /* ------------------------------------------------------------------ */
 
-/** Esforço de uma prática em "sessões equivalentes" (já ponderado pelo peso do hábito). */
-export function practiceEffort(
-  practice: Pick<SkillPractice, 'duration' | 'intensity' | 'weight'>,
-  skill: Pick<Skill, 'sessionMinutes'>,
-  cfg: SkillConfig = SKILL_CONFIG,
-): number {
+type EffortFields = Pick<SkillPractice, 'duration' | 'intensity' | 'weight'> & Partial<Pick<SkillPractice, 'rulesVersion' | 'targetMinutes' | 'sourceHabitId'>>
+
+/**
+ * Esforço de uma prática em "sessões equivalentes" (já ponderado pelo peso do hábito).
+ * v2 com meta em minutos: proporção = mín(1, minutos ÷ meta) × peso.
+ * Demais (v1, avulsas, metas que não são tempo): regra original.
+ */
+export function practiceEffort(practice: EffortFields, skill: Pick<Skill, 'sessionMinutes'>, cfg: SkillConfig = SKILL_CONFIG): number {
+  if (practice.rulesVersion === 2 && practice.targetMinutes && practice.duration !== null && practice.duration > 0) {
+    return Math.min(1, practice.duration / practice.targetMinutes) * practice.weight
+  }
   const raw = practice.duration !== null && practice.duration > 0 ? practice.duration / Math.max(1, skill.sessionMinutes) : practice.intensity
   return clamp(raw, cfg.MIN_PRACTICE_EFFORT, cfg.MAX_PRACTICE_EFFORT) * practice.weight
+}
+
+/** Minutos mínimos para uma prática contar na manutenção (nunca acima da própria meta). */
+export function maintenanceMinimum(targetMinutes: number, cfg: SkillConfig = SKILL_CONFIG): number {
+  return Math.min(targetMinutes, Math.max(cfg.MAINTENANCE_MIN_MINUTES, Math.ceil(targetMinutes * cfg.MAINTENANCE_MIN_RATIO - 1e-9)))
+}
+
+/**
+ * A prática conta como sessão de manutenção? Independe do peso do vínculo.
+ * v1 e avulsas: sempre. v2 em minutos: atingir o mínimo. v2 binária ou com
+ * outra unidade: só quando a sessão foi concluída.
+ */
+export function isMaintenancePractice(practice: EffortFields, cfg: SkillConfig = SKILL_CONFIG): boolean {
+  if (practice.rulesVersion !== 2 || !practice.sourceHabitId) return true
+  if (practice.targetMinutes && practice.duration !== null) return practice.duration >= maintenanceMinimum(practice.targetMinutes, cfg) - 1e-9
+  return practice.intensity >= 1 - 1e-9
 }
 
 /** XP total necessário para alcançar `level`. */
@@ -180,7 +201,12 @@ export interface SkillSnapshot extends SkillProgress {
   /** Sessões nos últimos N dias (janela de manutenção, incluindo hoje). */
   sessionsInWindow: number
   lastPracticedOn: ISODate | null
+  /** Dias desde a última prática (qualquer uma). */
   daysSinceLast: number | null
+  /** Última prática válida para manutenção. */
+  lastValidPracticeOn: ISODate | null
+  /** Dias contados para a ferrugem (desde a última prática válida). */
+  daysSinceValid: number | null
   /** Dias até começar a enferrujar, se nada for feito (só quando abaixo da manutenção). */
   daysUntilRust: number | null
   /** Quanto enferrujaria amanhã sem prática (0 se não). */
@@ -201,19 +227,25 @@ function floorOf(skill: ReplayContext['skill'], cfg: SkillConfig): number {
   return clamp(skill.minimumCondition ?? cfg.MINIMUM_CONDITION, 0, cfg.MAX_CONDITION)
 }
 
-/** Esforço e minutos por dia (práticas até `asOf`), com teto diário. */
+/**
+ * Esforço e minutos por dia (práticas até `asOf`), com teto diário, e os dias
+ * com ao menos uma prática válida para manutenção (no máximo 1 crédito por dia,
+ * independente do peso; práticas abaixo do mínimo não se somam).
+ */
 function dailyEfforts(ctx: ReplayContext, practices: readonly SkillPractice[], asOf: ISODate) {
   const efforts = new Map<ISODate, number>()
   const minutes = new Map<ISODate, number>()
+  const validDays = new Set<ISODate>()
   let totalPractices = 0
   for (const p of practices) {
     if (p.skillId !== ctx.skill.id || p.date > asOf) continue
     totalPractices++
     efforts.set(p.date, (efforts.get(p.date) ?? 0) + practiceEffort(p, ctx.skill, ctx.cfg))
     if (p.duration) minutes.set(p.date, (minutes.get(p.date) ?? 0) + p.duration * p.weight)
+    if (isMaintenancePractice(p, ctx.cfg)) validDays.add(p.date)
   }
   for (const [d, e] of efforts) efforts.set(d, Math.min(e, ctx.cfg.MAX_DAILY_EFFORT))
-  return { efforts, minutes, totalPractices }
+  return { efforts, minutes, validDays, totalPractices }
 }
 
 /** Aplica um dia com prática ao estado (pura). */
@@ -270,12 +302,18 @@ export function replaySkill(
 ): SkillSnapshot {
   const ctx: ReplayContext = { skill, cfg }
   const floor = floorOf(skill, cfg)
-  const { efforts, minutes, totalPractices } = dailyEfforts(ctx, practices, asOf)
+  const { efforts, minutes, validDays, totalPractices } = dailyEfforts(ctx, practices, asOf)
   const firstPractice = [...efforts.keys()].sort()[0]
   const start = firstPractice && firstPractice < skill.startDate ? firstPractice : skill.startDate
 
   let state: SkillProgress = { condition: Math.max(floor, cfg.INITIAL_CONDITION), experience: 0, mastery: 0, level: 1 }
   let lastPracticedOn: ISODate | null = null
+  /**
+   * Referência da inatividade (ferrugem): última prática válida. Práticas
+   * abaixo do mínimo evoluem a habilidade, mas não zeram essa contagem; sem
+   * nenhuma válida ainda, conta-se desde a primeira prática.
+   */
+  let rustRef: ISODate | null = null
   let peak = state.condition
   let totalMinutes = 0
   const window: number[] = []
@@ -283,52 +321,66 @@ export function replaySkill(
 
   for (let d = start; d <= asOf; d = addDays(d, 1)) {
     const effort = efforts.get(d) ?? 0
-    window.push(Math.min(effort, cfg.MAX_DAILY_SESSIONS))
+    const valid = validDays.has(d)
+    window.push(valid ? cfg.MAX_DAILY_SESSIONS : 0)
     if (window.length > cfg.MAINTENANCE_WINDOW_DAYS) window.shift()
     const sessionsInWindow = window.reduce((a, b) => a + b, 0)
-    let day: Omit<SkillDay, 'condition' | 'experience' | 'level' | 'mastery'>
+    let conditionGain = 0
+    let xpGain = 0
+    let masteryGain = 0
 
     if (effort > 0) {
       const next = applyPractice(state, { effort, sessionsInWindow, maintenancePerWeek: skill.maintenancePerWeek, minimumCondition: floor }, cfg)
       state = { condition: next.condition, experience: next.experience, mastery: next.mastery, level: next.level }
       lastPracticedOn = d
+      if (!rustRef) rustRef = d
       totalMinutes += minutes.get(d) ?? 0
-      day = { date: d, effort, minutes: minutes.get(d) ?? 0, conditionGain: next.conditionGain, decay: 0, xpGain: next.xpGain, masteryGain: next.masteryGain, sessionsInWindow }
-    } else {
-      let decay = 0
-      // Nunca praticada não enferruja; e o dia de hoje só conta quando terminar.
-      if (lastPracticedOn && d < asOf) {
-        decay = calculateSkillDecay(
-          {
-            daysSinceLast: diffDays(lastPracticedOn, d),
-            condition: state.condition,
-            mastery: state.mastery,
-            level: state.level,
-            maintenancePerWeek: skill.maintenancePerWeek,
-            minimumCondition: floor,
-            sessionsInWindow,
-          },
-          cfg,
-        ).amount
-      }
-      state = { ...state, condition: state.condition - decay }
-      day = { date: d, effort: 0, minutes: 0, conditionGain: 0, decay, xpGain: 0, masteryGain: 0, sessionsInWindow }
+      ;({ conditionGain, xpGain, masteryGain } = next)
+      peak = Math.max(peak, state.condition)
     }
-    if (effort > 0) peak = Math.max(peak, state.condition)
+    if (valid) rustRef = d
+
+    let decay = 0
+    // Nunca praticada não enferruja; e o dia de hoje só conta quando terminar.
+    if (!valid && rustRef && d < asOf) {
+      decay = calculateSkillDecay(
+        {
+          daysSinceLast: diffDays(rustRef, d),
+          condition: state.condition,
+          mastery: state.mastery,
+          level: state.level,
+          maintenancePerWeek: skill.maintenancePerWeek,
+          minimumCondition: floor,
+          sessionsInWindow,
+        },
+        cfg,
+      ).amount
+      state = { ...state, condition: state.condition - decay }
+    }
+    const day: Omit<SkillDay, 'condition' | 'experience' | 'level' | 'mastery'> = {
+      date: d,
+      effort,
+      minutes: minutes.get(d) ?? 0,
+      conditionGain,
+      decay,
+      xpGain,
+      masteryGain,
+      sessionsInWindow,
+    }
     history.push({ ...day, condition: state.condition, experience: state.experience, level: state.level, mastery: state.mastery })
     if (history.length > cfg.HISTORY_DAYS) history.shift()
   }
 
   const sessionsInWindow = window.reduce((a, b) => a + b, 0)
-  const derived = calculateSkillState({ lastPracticedOn, asOf, sessionsInWindow, maintenancePerWeek: skill.maintenancePerWeek }, cfg)
+  const derived = calculateSkillState({ lastPracticedOn: rustRef, asOf, sessionsInWindow, maintenancePerWeek: skill.maintenancePerWeek }, cfg)
 
   // Projeção de amanhã sem prática (para avisar antes de enferrujar).
   let nextDecay = 0
-  if (lastPracticedOn) {
+  if (rustRef) {
     const tomorrowWindow = [...window, 0].slice(-cfg.MAINTENANCE_WINDOW_DAYS)
     nextDecay = calculateSkillDecay(
       {
-        daysSinceLast: diffDays(lastPracticedOn, addDays(asOf, 1)),
+        daysSinceLast: diffDays(rustRef, addDays(asOf, 1)),
         condition: state.condition,
         mastery: state.mastery,
         level: state.level,
@@ -350,7 +402,9 @@ export function replaySkill(
     status: derived.status,
     sessionsInWindow,
     lastPracticedOn,
-    daysSinceLast: derived.daysSinceLast,
+    daysSinceLast: lastPracticedOn ? diffDays(lastPracticedOn, asOf) : null,
+    lastValidPracticeOn: rustRef && validDays.has(rustRef) ? rustRef : null,
+    daysSinceValid: derived.daysSinceLast,
     daysUntilRust: derived.daysUntilRust,
     nextDecay,
     rustSincePeak: Math.max(0, peak - state.condition),

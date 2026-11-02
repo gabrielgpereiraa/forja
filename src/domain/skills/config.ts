@@ -16,7 +16,14 @@ export const SKILL_CONFIG = {
   MAX_DAILY_EFFORT: 2,
   /** Um dia conta no máximo como 1 sessão para a frequência de manutenção. */
   MAX_DAILY_SESSIONS: 1,
-  /** Limites do esforço de uma prática com duração (minutos ÷ sessão de referência). */
+  /**
+   * Prática válida para manutenção (hábitos em minutos, regras v2):
+   * mínimo = mín(meta, máx(MIN_MINUTES, ⌈meta × RATIO⌉)). Abaixo disso a
+   * prática ainda evolui a habilidade, mas não conta como sessão.
+   */
+  MAINTENANCE_MIN_RATIO: 0.25,
+  MAINTENANCE_MIN_MINUTES: 5,
+  /** Limites do esforço de uma prática v1 / avulsa (minutos ÷ sessão de referência). */
   MIN_PRACTICE_EFFORT: 0.25,
   MAX_PRACTICE_EFFORT: 2,
 

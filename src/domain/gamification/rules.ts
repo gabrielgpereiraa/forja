@@ -24,10 +24,11 @@ export const DEFAULT_RULES: readonly AnyRewardRule[] = [
   }),
   rule({
     id: 'habit.session.focus',
-    event: 'habit.session_completed',
+    // Esforço gera progresso: o Foco vale o valor atual do registro, concluído ou não.
+    event: 'habit.progress_recorded',
     resource: 'focus',
     label: 'Tempo dedicado',
-    description: '+1 de foco por minuto em hábitos com meta de tempo',
+    description: '+1 de foco por minuto realizado em hábitos com meta de tempo (mesmo sem concluir)',
     compute: (e) => (e.habit.target?.unit === 'minutes' ? Math.round(e.log.value) : null),
     sourceKey: (e) => `habitLog:${e.log.id}`,
   }),

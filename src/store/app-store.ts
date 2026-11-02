@@ -5,7 +5,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
-import type { ISODate } from '@/domain/date'
+import { getProductivityDate, type ISODate } from '@/domain/date'
 import type { HabitInput } from '@/domain/models/habit'
 import type { GoalProposal } from '@/domain/rules/habit-progression'
 import type { LedgerEntry } from '@/domain/models/gamification'
@@ -77,6 +77,8 @@ export const useAppStore = create<AppState>()(
         return result.feedback
       }
       const apply = (fn: (d: AppData) => AppData) => set(fn(dataOf(get())))
+      /** Dia de produtividade atual: os comandos o usam para bloquear datas passadas. */
+      const currentDay = () => getProductivityDate(new Date(), get().settings.dayStartHour)
 
       return {
         ...createEmptyData(),
@@ -96,8 +98,8 @@ export const useAppStore = create<AppState>()(
         snoozeProgression: (id, today) => apply((d) => cmd.snoozeProgression(d, id, today)),
         setHabitArchived: (id, archived) => apply((d) => cmd.setHabitArchived(d, id, archived)),
         deleteHabit: (id, today) => apply((d) => cmd.deleteHabit(d, id, today)),
-        toggleHabit: (id, date) => run((d) => cmd.toggleHabit(d, id, date)),
-        setHabitValue: (id, date, value) => run((d) => cmd.setHabitValue(d, id, date, value)),
+        toggleHabit: (id, date) => run((d) => cmd.toggleHabit(d, id, date, currentDay())),
+        setHabitValue: (id, date, value) => run((d) => cmd.setHabitValue(d, id, date, value, currentDay())),
         confirmLateHabit: (id, date, today, done) => run((d) => cmd.confirmLateHabit(d, id, date, today, done)),
 
         createTask: (input, today) => {
@@ -106,7 +108,7 @@ export const useAppStore = create<AppState>()(
           return r.task.id
         },
         updateTask: (id, input) => apply((d) => cmd.updateTask(d, id, input)),
-        setTaskCompleted: (id, completed, today) => run((d) => cmd.setTaskCompleted(d, id, completed, today)),
+        setTaskCompleted: (id, completed, date) => run((d) => cmd.setTaskCompleted(d, id, completed, date, currentDay())),
         deleteTask: (id) => {
           const r = cmd.deleteTask(dataOf(get()), id)
           set(r.data)

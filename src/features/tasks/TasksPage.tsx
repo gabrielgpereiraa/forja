@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { relativeDayLabel, type ISODate } from '@/domain/date'
 import type { Task } from '@/domain/models/task'
-import { bucketOf, sortTaskItems, type TaskBucket } from '@/domain/rules/task-agenda'
+import { bucketOf, isTaskLocked, sortTaskItems, type TaskBucket } from '@/domain/rules/task-agenda'
 import { useToday } from '@/hooks/use-today'
 import { useAppStore } from '@/store/app-store'
 import { useUiStore } from '@/store/ui-store'
@@ -21,6 +21,7 @@ function sortTasks(tasks: Task[]): Task[] {
 export function TasksPage() {
   const today = useToday()
   const tasks = useAppStore((s) => s.tasks)
+  const records = useAppStore((s) => s.records)
   const openTaskForm = useUiStore((s) => s.openTaskForm)
   const { toggle } = useTaskActions()
   const [tab, setTab] = useState<TaskBucket>('today')
@@ -53,7 +54,7 @@ export function TasksPage() {
   const overdue = buckets.today.filter((t) => !t.completed && t.dueDate! < today).length
   const defaultDate: ISODate | null = tab === 'someday' ? null : today
 
-  const row = (t: Task) => <TaskRow key={t.id} task={t} today={today} onToggle={() => toggle(t.id, today)} onOpen={() => openTaskForm(t.id)} />
+  const row = (t: Task) => <TaskRow key={t.id} task={t} today={today} locked={isTaskLocked(t, records, today)} onToggle={() => toggle(t.id, today)} onOpen={() => openTaskForm(t.id)} />
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -102,7 +103,7 @@ export function TasksPage() {
                   <h3 className="mb-1.5 px-1 text-[13px] font-semibold text-muted-foreground">{relativeDayLabel(date, today)}</h3>
                   <Surface className="p-1.5">
                     {list.map((t) => (
-                      <TaskRow key={t.id} task={t} today={today} showDate={false} onToggle={() => toggle(t.id, today)} onOpen={() => openTaskForm(t.id)} />
+                      <TaskRow key={t.id} task={t} today={today} showDate={false} locked={isTaskLocked(t, records, today)} onToggle={() => toggle(t.id, today)} onOpen={() => openTaskForm(t.id)} />
                     ))}
                   </Surface>
                 </section>
