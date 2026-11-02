@@ -148,4 +148,38 @@ describe('confirmação tardia', () => {
     expect(overview.plannedHabits.some((s) => s.habit.id === read.habit.id && !s.doneToday)).toBe(true)
     expect(habitsForMorningReview(overview).map((s) => s.habit.id)).toEqual([sleep.habit.id])
   })
+
+  describe('quando o dia foi encerrado', () => {
+    function openTuesday() {
+      let data: AppData = cmd.completeOnboarding(createEmptyData(), 'Nino', '2026-10-05')
+      const sleep = cmd.createHabit(data, SLEEP, '2026-10-05')
+      const read = cmd.createHabit(sleep.data, READ, '2026-10-05')
+      data = cmd.toggleHabit(read.data, read.habit.id, D).data // lê; o sono fica desmarcado
+      return { data, sleepId: sleep.habit.id }
+    }
+
+    it('à noite, no próprio dia: abre a janela da manhã seguinte', () => {
+      const { data, sleepId } = openTuesday()
+      const closed = cmd.closeDay(data, D, 'user', D).data
+      expect(closed.records[D]?.awaitingConfirmation).toEqual([sleepId])
+      expect(cmd.confirmLateHabit(closed, sleepId, D, NEXT, true).data.records[D]?.lateConfirmations).toHaveLength(1)
+    })
+
+    it('pela revisão da manhã: o desmarcado conta como não cumprido, sem segunda chance', () => {
+      const { data, sleepId } = openTuesday()
+      const closed = cmd.closeDay(data, D, 'user', NEXT).data
+      expect(closed.records[D]?.awaitingConfirmation).toEqual([])
+      const r = cmd.confirmLateHabit(closed, sleepId, D, NEXT, true)
+      expect(r.data).toBe(closed)
+      expect(r.data.logs.some((l) => l.habitId === sleepId && l.date === D && l.completed)).toBe(false)
+    })
+
+    it('marcado na revisão antes de encerrar: conta para ontem normalmente', () => {
+      const { data, sleepId } = openTuesday()
+      const marked = cmd.toggleHabit(data, sleepId, D, NEXT).data
+      const closed = cmd.closeDay(marked, D, 'user', NEXT).data
+      expect(closed.records[D]?.completedHabits).toBe(2)
+      expect(closed.records[D]?.awaitingConfirmation).toEqual([])
+    })
+  })
 })

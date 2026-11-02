@@ -394,7 +394,13 @@ export function restoreTask(data: AppData, task: Task, entries: LedgerEntry[]): 
 
 /* ------------------------------ Dia ------------------------------ */
 
-export function closeDay(data: AppData, date: ISODate, closedBy: DailyRecord['closedBy']): CommandResult {
+/**
+ * Encerra um dia. `today` (dia de produtividade atual) decide a confirmação
+ * tardia: encerrado pelo usuário depois do fim do dia (revisão da manhã), não
+ * há segunda chance — os hábitos desmarcados contam como não cumpridos. Um dia
+ * encerrado sozinho (ontem vazio, sem revisão) mantém a janela.
+ */
+export function closeDay(data: AppData, date: ISODate, closedBy: DailyRecord['closedBy'], today?: ISODate): CommandResult {
   const feedback = emptyFeedback()
   if (data.records[date]) return { data, feedback }
   const overview = buildDayOverview({
@@ -404,13 +410,14 @@ export function closeDay(data: AppData, date: ISODate, closedBy: DailyRecord['cl
     tasks: data.tasks,
     record: null,
   })
-  const record = createDailyRecord(overview, closedBy, nowTimestamp())
+  const closedAfterDay = closedBy === 'user' && today !== undefined && date < today
+  const record = createDailyRecord(overview, closedBy, nowTimestamp(), !closedAfterDay)
   const records = { ...data.records, [date]: record }
   const { ledger, streak } = rewardDay(data.ledger, records, date)
   feedback.events.push('day.closed')
   feedback.record = record
   feedback.streak = streak
-  return finalize(data, { ...data, records, ledger }, date, feedback)
+  return finalize(data, { ...data, records, ledger }, today ?? date, feedback)
 }
 
 /** (Re)gera as recompensas de encerramento de um dia a partir do registro atual. */
@@ -512,7 +519,7 @@ export function autoCloseMissedDays(data: AppData, today: ISODate, maxDays = 60)
   for (let d = from; d < today; d = addDays(d, 1)) {
     if (next.records[d]) continue
     if (d === yesterday && isPendingReview(next, d, today)) continue
-    next = closeDay(next, d, 'auto').data
+    next = closeDay(next, d, 'auto', today).data
   }
   // Conquistas que aguardavam a consolidação (ex.: confirmações tardias de
   // anteontem) são validadas ao abrir o app.

@@ -96,7 +96,7 @@ Faixas (`scoring/tiers.ts`): Lendário ≥ 9 · Ótimo ≥ 7,5 · Bom ≥ 6 · R
 ### Encerramento do dia e revisão da manhã
 
 1. **Completar dia** (painel Hoje) grava o snapshot; o dia fica somente leitura até ser reaberto.
-2. Se ontem ficou aberto e tinha algo planejado, ele **não** é fechado sozinho: o painel mostra o cartão **"Ontem ainda está aberto"**, com **somente** os hábitos marcados como *confirmar na manhã seguinte* (ex.: "Dormir até 23h"); hábitos comuns e tarefas pendentes não entram (`habitsForMorningReview`) — tarefas pendentes aparecem hoje como atrasadas. O que for marcado ali conta **para ontem** (`date = ontem`). Depois, **Encerrar ontem** grava a nota.
+2. Se ontem ficou aberto e tinha algo planejado, ele **não** é fechado sozinho: o painel mostra o cartão **"Ontem ainda está aberto"**, com **somente** os hábitos marcados como *confirmar na manhã seguinte* (ex.: "Dormir até 23h"); hábitos comuns e tarefas pendentes não entram (`habitsForMorningReview`) — tarefas pendentes aparecem hoje como atrasadas. O que for marcado ali conta **para ontem** (`date = ontem`). Depois, **Encerrar ontem** grava a nota. Encerrar pela revisão é definitivo: hábitos com a flag que ficaram desmarcados contam como **não cumpridos** e não abrem a confirmação tardia (a revisão já era esse momento); o modal de encerramento avisa quais são.
 3. Dias anteriores a ontem — ou ontem vazio — são encerrados automaticamente ao abrir o app (`closedBy: 'auto'`). Ou seja: a janela de revisão vai até o fim do dia seguinte.
 4. Hábitos com `confirmNextDay` aparecem com o selo "Confirmar amanhã". Encerrar o dia sem marcá-los é normal: veja a confirmação tardia abaixo.
 
@@ -114,6 +114,7 @@ Validadas na camada de serviços (não só na interface). O store passa o dia de
 
 Dia encerrado **não é reaberto** e continua bloqueado (`setHabitValue` ignora datas com registro). A única exceção é controlada:
 
+- **Quando:** só para dias encerrados **dentro do próprio dia** (à noite) ou encerrados sozinhos (ontem vazio, sem revisão). Dia encerrado pelo usuário depois de acabar (revisão da manhã) grava `awaitingConfirmation = []` (`closeDay(…, today)`).
 - **Quem:** só os hábitos que tinham `confirmNextDay` e estavam em aberto **no momento do encerramento**. A lista fica congelada no registro (`DailyRecord.awaitingConfirmation`); ligar a flag depois não libera nada. Registros antigos, sem a lista, usam a flag atual.
 - **Quando:** enquanto o dia encerrado é "ontem" — até o início do dia seguinte (`settings.dayStartHour`, padrão 04:00). Depois disso o registro é definitivo.
 - **O quê:** confirmar (ou desfazer uma confirmação tardia). A conclusão grava o log **no dia anterior**; o registro é recalculado (nota, hábitos concluídos, breakdown), as recompensas `day:<data>` são regeradas (XP da nota, "todos os hábitos", marco de sequência) e, se hoje já estiver encerrado, as de hoje também, porque a sequência depende de ontem. `closedAt`/`closedBy` não mudam.

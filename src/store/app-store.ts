@@ -131,7 +131,7 @@ export const useAppStore = create<AppState>()(
         },
         removeSkillPractice: (practiceId, today) => apply((d) => skills.removeSkillPractice(d, practiceId, today)),
 
-        closeDay: (date) => run((d) => cmd.closeDay(d, date, 'user')),
+        closeDay: (date) => run((d) => cmd.closeDay(d, date, 'user', currentDay())),
         reopenDay: (date) => apply((d) => cmd.reopenDay(d, date)),
         autoCloseMissedDays: (today) => {
           const before = dataOf(get())

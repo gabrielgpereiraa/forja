@@ -92,6 +92,12 @@ export function createDailyRecord(
   overview: DayOverview,
   closedBy: DailyRecord['closedBy'],
   closedAt: string,
+  /**
+   * Abre a janela de confirmação tardia? Falso quando o próprio usuário
+   * encerra o dia depois que ele acabou (revisão da manhã): a revisão já era o
+   * momento de confirmar, e o que ficou desmarcado conta como não cumprido.
+   */
+  lateWindow = true,
 ): DailyRecord {
   const states = [...overview.plannedHabits, ...overview.optionalHabits]
   const breakdown = computeDayScore({ date: overview.date, habits: states, tasks: overview.tasks })
@@ -105,7 +111,7 @@ export function createDailyRecord(
     totalTasks: overview.tasksTotal,
     closedAt,
     closedBy,
-    awaitingConfirmation: states.filter((s) => s.habit.confirmNextDay && !s.doneToday).map((s) => s.habit.id),
+    awaitingConfirmation: lateWindow ? states.filter((s) => s.habit.confirmNextDay && !s.doneToday).map((s) => s.habit.id) : [],
   }
 }
 
