@@ -7,8 +7,9 @@
  * reescrever o histórico — cada `DailyRecord` guarda a versão usada.
  */
 import type { ISODate } from '../date'
-import type { HabitDayState } from '../rules/habit-schedule'
-import type { TaskDayItem } from '../rules/task-agenda'
+import type { TaskPriority } from '../models/task'
+import type { HabitRequirement } from '../rules/habit-schedule'
+import type { TaskDayRole } from '../rules/task-agenda'
 
 export interface ScoreComponent {
   id: string
@@ -45,10 +46,31 @@ export interface ScoreBreakdown {
   highlights: string[]
 }
 
+/**
+ * O que uma estratégia pode ler de um hábito no dia. `HabitDayState` atende
+ * por estrutura; o retrato do encerramento (`DayScoringSnapshot`) guarda
+ * exatamente estes campos — uma estratégia que leia algo além disso não pode
+ * recalcular dias encerrados.
+ */
+export interface ScoringHabit {
+  requirement: HabitRequirement
+  doneToday: boolean
+  /** Progresso da sessão (0–1). */
+  sessionProgress: number
+  week: { done: number; expectedByToday: number }
+}
+
+/** O que uma estratégia pode ler de uma tarefa no dia (`TaskDayItem` atende por estrutura). */
+export interface ScoringTask {
+  role: TaskDayRole
+  doneOnDay: boolean
+  task: { priority: TaskPriority }
+}
+
 export interface ScoringInput {
   date: ISODate
-  habits: readonly HabitDayState[]
-  tasks: readonly TaskDayItem[]
+  habits: readonly ScoringHabit[]
+  tasks: readonly ScoringTask[]
 }
 
 export interface ScoringStrategy {

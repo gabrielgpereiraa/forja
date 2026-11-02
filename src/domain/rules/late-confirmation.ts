@@ -7,9 +7,10 @@
  * conclusão pertence ao dia anterior, que é recalculado.
  */
 import { addDays, type ISODate } from '../date'
-import type { DailyRecord } from '../models/day'
+import type { DailyRecord, DayScoringSnapshot } from '../models/day'
 import type { Habit } from '../models/habit'
 import type { ID } from '../models/ids'
+import type { ScoreBreakdown, ScoringStrategy } from '../scoring/types'
 import type { DayOverview } from './day-overview'
 import { isHabitActiveOn, logKey, type HabitDayState, type LogIndex } from './habit-schedule'
 
@@ -58,4 +59,26 @@ export function lateConfirmationCandidates(
  */
 export function habitsForMorningReview(overview: Pick<DayOverview, 'plannedHabits' | 'optionalHabits'>): HabitDayState[] {
   return [...overview.plannedHabits, ...overview.optionalHabits].filter((s) => s.habit.confirmNextDay)
+}
+
+/**
+ * Nota de um dia encerrado a partir do retrato do encerramento, aplicando só
+ * as confirmações tardias vigentes: cada hábito confirmado passa a concluído
+ * (progresso 1, +1 sessão na semana). Sem confirmações, reproduz a nota do
+ * encerramento. Tarefas e demais hábitos ficam exatamente como estavam.
+ */
+export function rescoreFromSnapshot(
+  snapshot: DayScoringSnapshot,
+  date: ISODate,
+  confirmed: ReadonlySet<ID>,
+  strategy: ScoringStrategy,
+): { score: number | null; breakdown: ScoreBreakdown; completedHabits: number } {
+  const habits = snapshot.habits.map((h) =>
+    confirmed.has(h.habitId) && !h.doneToday
+      ? { ...h, doneToday: true, sessionProgress: 1, week: { ...h.week, done: h.week.done + 1 } }
+      : h,
+  )
+  const breakdown = strategy.compute({ date, habits, tasks: snapshot.tasks })
+  const completedHabits = habits.filter((h) => h.requirement === 'required' && h.doneToday).length
+  return { score: breakdown.score, breakdown, completedHabits }
 }

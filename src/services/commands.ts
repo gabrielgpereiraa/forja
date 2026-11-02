@@ -19,7 +19,7 @@ import { buildDayOverview, createDailyRecord } from '@/domain/rules/day-overview
 import { getWeekProgress, indexLogs, isSessionComplete, sessionTargetOf } from '@/domain/rules/habit-schedule'
 import { applyGoalChange, habitForDate } from '@/domain/rules/habit-goal-history'
 import type { GoalProposal } from '@/domain/rules/habit-progression'
-import { eligibleLateHabitIds, isWithinLateWindow, lateConfirmationCandidates } from '@/domain/rules/late-confirmation'
+import { eligibleLateHabitIds, isWithinLateWindow, lateConfirmationCandidates, rescoreFromSnapshot } from '@/domain/rules/late-confirmation'
 import { computePlayerStats } from '@/domain/rules/stats'
 import { computeStreak } from '@/domain/rules/streaks'
 import { strategyFor } from '@/domain/scoring'
@@ -470,12 +470,29 @@ function applyLateConfirmation(data: AppData, habitId: string, date: ISODate, to
 
   const written = applyHabitValue(data, habitId, date, value, today)
   let next = written.data
-  const overview = buildDayOverview({ date, habits: next.habits, logs: indexLogs(next.logs), tasks: next.tasks, record: null })
-  const rescored: DailyRecord = {
-    ...createDailyRecord(overview, record.closedBy, record.closedAt, true, strategy),
-    // A lista de elegíveis fica congelada como estava no encerramento.
-    awaitingConfirmation: eligibleLateHabitIds(record, data.habits),
-    ...(nextConfirmations.length ? { lateConfirmations: nextConfirmations } : {}),
+  let rescored: DailyRecord
+  if (record.scoringSnapshot) {
+    // Parte do plano congelado no encerramento: só o hábito confirmado muda.
+    const confirmed = new Set(nextConfirmations.map((c) => c.habitId))
+    const rest: DailyRecord = { ...record }
+    delete rest.lateConfirmations
+    rescored = {
+      ...rest,
+      ...rescoreFromSnapshot(record.scoringSnapshot, date, confirmed, strategy),
+      awaitingConfirmation: eligibleLateHabitIds(record, data.habits),
+      ...(nextConfirmations.length ? { lateConfirmations: nextConfirmations } : {}),
+    }
+  } else {
+    // Registro anterior ao retrato: recalcula com os dados atuais (versão do registro).
+    const overview = buildDayOverview({ date, habits: next.habits, logs: indexLogs(next.logs), tasks: next.tasks, record: null })
+    const legacy = createDailyRecord(overview, record.closedBy, record.closedAt, true, strategy)
+    delete legacy.scoringSnapshot // um retrato montado agora não refletiria o encerramento
+    rescored = {
+      ...legacy,
+      // A lista de elegíveis fica congelada como estava no encerramento.
+      awaitingConfirmation: eligibleLateHabitIds(record, data.habits),
+      ...(nextConfirmations.length ? { lateConfirmations: nextConfirmations } : {}),
+    }
   }
   const records = { ...next.records, [date]: rescored }
   let { ledger } = rewardDay(next.ledger, records, date)

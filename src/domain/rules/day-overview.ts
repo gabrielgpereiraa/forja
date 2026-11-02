@@ -4,7 +4,7 @@
  * histórico.
  */
 import type { ISODate } from '../date'
-import type { DailyRecord } from '../models/day'
+import type { DailyRecord, DayScoringSnapshot } from '../models/day'
 import type { Habit, HabitLog } from '../models/habit'
 import type { Task } from '../models/task'
 import { computeDayScore, type ScoreBreakdown, type ScoringStrategy } from '../scoring'
@@ -114,6 +114,21 @@ export function createDailyRecord(
     closedAt,
     closedBy,
     awaitingConfirmation: lateWindow ? states.filter((s) => s.habit.confirmNextDay && !s.doneToday).map((s) => s.habit.id) : [],
+    scoringSnapshot: scoringSnapshotOf(states, overview.tasks),
+  }
+}
+
+/** Copia só os campos que a nota lê (sem objetos de hábito/tarefa nem textos). */
+export function scoringSnapshotOf(states: readonly HabitDayState[], tasks: readonly TaskDayItem[]): DayScoringSnapshot {
+  return {
+    habits: states.map((s) => ({
+      habitId: s.habit.id,
+      requirement: s.requirement,
+      doneToday: s.doneToday,
+      sessionProgress: s.sessionProgress,
+      week: { done: s.week.done, expectedByToday: s.week.expectedByToday },
+    })),
+    tasks: tasks.map((t) => ({ taskId: t.task.id, role: t.role, doneOnDay: t.doneOnDay, task: { priority: t.task.priority } })),
   }
 }
 

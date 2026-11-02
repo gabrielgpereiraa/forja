@@ -64,7 +64,7 @@ export function sortTaskItems(items: TaskDayItem[]): TaskDayItem[] {
   })
 }
 
-export function taskWeight(task: Task): number {
+export function taskWeight(task: Pick<Task, 'priority'>): number {
   return TASK_PRIORITY_META[task.priority].weight
 }
 

@@ -234,4 +234,89 @@ describe('confirmação tardia', () => {
       expect(r.data.logs.some((l) => l.habitId === sleepId && l.date === D)).toBe(false)
     })
   })
+
+  describe('retrato do encerramento (scoringSnapshot)', () => {
+    /** Terça com uma tarefa normal pendente; lê, não marca o sono e encerra à noite. */
+    function closedWithTask() {
+      let data: AppData = cmd.completeOnboarding(createEmptyData(), 'Nino', '2026-10-05')
+      const sleep = cmd.createHabit(data, SLEEP, '2026-10-05')
+      const read = cmd.createHabit(sleep.data, READ, '2026-10-05')
+      const task = cmd.createTask(read.data, { title: 'Relatório confidencial', dueDate: D, priority: 'normal' }, '2026-10-05')
+      data = cmd.toggleHabit(task.data, read.habit.id, D).data
+      data = cmd.closeDay(data, D, 'user', D).data
+      return { data, sleepId: sleep.habit.id, readId: read.habit.id, taskId: task.task.id }
+    }
+    const dayXp = (d: AppData) => sumResource(d.ledger.filter((e) => e.sourceKey === `day:${D}`), 'xp')
+    const confirm = (d: AppData, sleepId: string) => cmd.confirmLateHabit(d, sleepId, D, NEXT, true).data
+
+    it('encerrar guarda só ids e campos da nota, sem textos', () => {
+      const { data, sleepId, readId, taskId } = closedWithTask()
+      const snap = data.records[D]!.scoringSnapshot!
+      expect(snap.habits.map((h) => h.habitId)).toEqual([sleepId, readId])
+      expect(snap.habits[1]).toEqual({ habitId: readId, requirement: 'required', doneToday: true, sessionProgress: 1, week: { done: 1, expectedByToday: 2 } })
+      expect(snap.tasks).toEqual([{ taskId, role: 'due', doneOnDay: false, task: { priority: 'normal' } }])
+      expect(JSON.stringify(snap)).not.toContain('Relatório')
+      expect(JSON.stringify(snap)).not.toContain('Dormir')
+    })
+
+    it('sem mudanças, o retrato dá o mesmo resultado que o recálculo antigo', () => {
+      const { data, sleepId } = closedWithTask()
+      const viaSnapshot = confirm(data, sleepId).records[D]!
+      const legacy = { ...data.records[D]! }
+      delete legacy.scoringSnapshot
+      const viaLegacy = confirm({ ...data, records: { ...data.records, [D]: legacy } }, sleepId).records[D]!
+      expect(viaSnapshot.score).toBe(viaLegacy.score)
+      expect(viaSnapshot.breakdown).toEqual(viaLegacy.breakdown)
+      expect(viaSnapshot.completedHabits).toBe(viaLegacy.completedHabits)
+    })
+
+    const changes: [string, (d: AppData, ids: { readId: string; taskId: string }) => AppData][] = [
+      ['tarefa pendente remarcada para amanhã', (d, { taskId }) => cmd.updateTask(d, taskId, { title: 'Relatório confidencial', dueDate: '2026-10-08', priority: 'normal' })],
+      ['tarefa pendente excluída', (d, { taskId }) => cmd.deleteTask(d, taskId).data],
+      ['prioridade alterada', (d, { taskId }) => cmd.updateTask(d, taskId, { title: 'Relatório confidencial', dueDate: D, priority: 'low' })],
+      ['tarefa nova criada com data de ontem', (d) => cmd.createTask(d, { title: 'Nova', dueDate: D, priority: 'high' }, NEXT).data],
+      ['meta do hábito alterada nesta semana', (d, { readId }) => cmd.updateHabit(d, readId, { ...READ, schedule: { weeklyGoal: 1, days: null } }, NEXT)],
+    ]
+
+    it.each(changes)('%s depois do encerramento não altera o resultado da confirmação', (_label, change) => {
+      const { data, sleepId, readId, taskId } = closedWithTask()
+      const reference = confirm(data, sleepId)
+      const changed = confirm(change(data, { readId, taskId }), sleepId)
+      const ref = reference.records[D]!
+      const got = changed.records[D]!
+      expect(got.score).toBe(ref.score)
+      expect(got.breakdown).toEqual(ref.breakdown)
+      expect([got.completedHabits, got.totalHabits, got.completedTasks, got.totalTasks]).toEqual([ref.completedHabits, ref.totalHabits, ref.completedTasks, ref.totalTasks])
+      expect(dayXp(changed)).toBe(dayXp(reference))
+      expect(computeStreak(changed.records, NEXT).current).toBe(computeStreak(reference.records, NEXT).current)
+    })
+
+    it.each(changes)('desfazer após "%s" volta exatamente ao registro do encerramento', (_label, change) => {
+      const { data, sleepId, readId, taskId } = closedWithTask()
+      const original = data.records[D]!
+      const changed = change(data, { readId, taskId })
+      const undone = cmd.confirmLateHabit(confirm(changed, sleepId), sleepId, D, NEXT, false).data
+      expect(undone.records[D]).toEqual(original)
+      expect(dayXp(undone)).toBe(dayXp(data))
+    })
+
+    it('a confirmação muda só o hábito confirmado no retrato recalculado', () => {
+      const { data, sleepId } = closedWithTask()
+      const before = data.records[D]!
+      const after = confirm(data, sleepId).records[D]!
+      expect(after.scoringSnapshot).toEqual(before.scoringSnapshot) // o retrato do encerramento é imutável
+      expect(after.completedHabits).toBe(before.completedHabits + 1)
+      expect(after.score!).toBeGreaterThan(before.score!)
+      expect([after.completedTasks, after.totalTasks, after.closedAt, after.closedBy]).toEqual([before.completedTasks, before.totalTasks, before.closedAt, before.closedBy])
+    })
+
+    it('registro antigo (sem retrato) continua confirmável e não ganha retrato montado depois', () => {
+      const { data, sleepId } = closedWithTask()
+      const legacy = { ...data.records[D]! }
+      delete legacy.scoringSnapshot
+      const r = confirm({ ...data, records: { ...data.records, [D]: legacy } }, sleepId)
+      expect(r.records[D]?.completedHabits).toBe(2)
+      expect(r.records[D]?.scoringSnapshot).toBeUndefined()
+    })
+  })
 })
