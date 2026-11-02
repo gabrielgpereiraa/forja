@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createEmptyData, type AppData } from '@/services/app-data'
+import { createEmptyData, migrateData, SCHEMA_VERSION, type AppData } from '@/services/app-data'
 import * as cmd from '@/services/commands'
 import { buildDemoData } from '@/services/demo-seed'
 import { allChanges, applyRows, diffData, TABLES, type RemoteRow, type TableName } from '../collections'
@@ -179,5 +179,59 @@ describe('SyncEngine', () => {
     expect(b.get().habits[0]?.name).toBe('Ler (B)')
     await a.engine.sync()
     expect(a.get().habits[0]?.name).toBe('Ler (B)')
+  })
+})
+
+/* ------------------------- persistência do retrato ------------------------- */
+
+describe('scoringSnapshot e confirmações tardias persistem', () => {
+  const D = '2026-10-06' as const
+  const NEXT = '2026-10-07' as const
+  /** Dia encerrado à noite com um hábito confirmado na manhã seguinte (retrato + confirmação). */
+  function closedAndConfirmed(): { data: AppData; sleepId: string } {
+    let data = cmd.completeOnboarding(createEmptyData(), 'Nino', '2026-10-05')
+    const sleep = cmd.createHabit(data, { ...HABIT, name: 'Dormir', schedule: { weeklyGoal: 7, days: null }, confirmNextDay: true }, '2026-10-05')
+    const read = cmd.createHabit(sleep.data, { ...HABIT, schedule: { weeklyGoal: 7, days: null } }, '2026-10-05')
+    const task = cmd.createTask(read.data, { title: 'Relatório', dueDate: D, priority: 'high' }, '2026-10-05')
+    data = cmd.toggleHabit(task.data, read.habit.id, D).data
+    data = cmd.closeDay(data, D, 'user', D).data
+    data = cmd.confirmLateHabit(data, sleep.habit.id, D, NEXT, true).data
+    expect(data.records[D]?.scoringSnapshot?.habits).toHaveLength(2)
+    expect(data.records[D]?.lateConfirmations).toHaveLength(1)
+    return { data, sleepId: sleep.habit.id }
+  }
+
+  it('linhas → JSON (como o jsonb) → estado: o registro volta idêntico e continua funcional', () => {
+    const { data, sleepId } = closedAndConfirmed()
+    const rows: RemoteRow[] = allChanges(data)
+      .filter((c) => c.table === 'day_records')
+      .map((c) => ({ id: c.id, data: JSON.parse(JSON.stringify(c.data)), updated_at: 'x', deleted_at: null }))
+    const rebuilt = applyRows({ ...data, records: {} }, 'day_records', rows)
+    expect(rebuilt.records[D]).toEqual(data.records[D])
+    // Desfazer no estado reconstruído dá o mesmo resultado que no original.
+    const undo = (d: AppData) => cmd.confirmLateHabit(d, sleepId, D, NEXT, false).data.records[D]
+    expect(undo(rebuilt)).toEqual(undo(data))
+  })
+
+  it('aparelho A → servidor → aparelho B: retrato e confirmações chegam inteiros', async () => {
+    const server = fakeServer()
+    const a = device(server.remote)
+    const b = device(server.remote)
+    await a.engine.start()
+    await b.engine.start()
+    const { data } = closedAndConfirmed()
+    a.set(data)
+    expect(await a.engine.flush()).toBe(0)
+    await b.engine.sync()
+    expect(JSON.parse(JSON.stringify(b.get().records[D]))).toEqual(JSON.parse(JSON.stringify(data.records[D])))
+  })
+
+  it('backup: exportar (JSON) → importar preserva o registro inteiro', () => {
+    const { data } = closedAndConfirmed()
+    // Mesmo formato do botão "Exportar dados" e do "Importar" do perfil.
+    const file = JSON.stringify({ app: 'forja', version: 1, exportedAt: 'x', data }, null, 2)
+    const imported = migrateData((JSON.parse(file) as { data: AppData }).data, SCHEMA_VERSION)
+    expect(imported.records[D]).toEqual(data.records[D])
+    expect(imported.records[D]?.scoringSnapshot).toEqual(data.records[D]?.scoringSnapshot)
   })
 })

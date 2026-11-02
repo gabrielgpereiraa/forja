@@ -319,4 +319,85 @@ describe('confirmação tardia', () => {
       expect(r.records[D]?.scoringSnapshot).toBeUndefined()
     })
   })
+
+  describe('múltiplas confirmações no mesmo dia', () => {
+    const SCREENS: HabitInput = { name: 'Sem telas após 22h', category: 'health', icon: 'moon', color: 'violet', schedule: { weeklyGoal: 7, days: null }, target: null, confirmNextDay: true }
+
+    /** Terça: lê; sono e telas (ambos com a flag) ficam em aberto; uma tarefa pendente; encerrado à noite. */
+    function twoPending() {
+      let data: AppData = cmd.completeOnboarding(createEmptyData(), 'Nino', '2026-10-05')
+      const sleep = cmd.createHabit(data, SLEEP, '2026-10-05')
+      const screens = cmd.createHabit(sleep.data, SCREENS, '2026-10-05')
+      const read = cmd.createHabit(screens.data, READ, '2026-10-05')
+      const task = cmd.createTask(read.data, { title: 'Relatório', dueDate: D, priority: 'normal' }, '2026-10-05')
+      data = cmd.toggleHabit(task.data, read.habit.id, D).data
+      data = cmd.closeDay(data, D, 'user', D).data
+      return { data, a: sleep.habit.id, b: screens.habit.id, taskId: task.task.id }
+    }
+    const confirm = (d: AppData, id: string, done = true) => cmd.confirmLateHabit(d, id, D, NEXT, done).data
+    const dayXp = (d: AppData) => sumResource(d.ledger.filter((e) => e.sourceKey === `day:${D}`), 'xp')
+    const doneOn = (d: AppData, id: string) => d.logs.some((l) => l.habitId === id && l.date === D && l.completed)
+    const withoutTimes = (d: AppData) => {
+      const r = d.records[D]!
+      return { ...r, lateConfirmations: r.lateConfirmations?.map((c) => ({ habitId: c.habitId, previousValue: c.previousValue })) }
+    }
+
+    it('os dois hábitos aguardam confirmação e o retrato registra ambos em aberto', () => {
+      const { data, a, b } = twoPending()
+      expect(data.records[D]?.awaitingConfirmation).toEqual([a, b])
+      const snap = data.records[D]!.scoringSnapshot!
+      expect(snap.habits.filter((h) => h.habitId === a || h.habitId === b).every((h) => !h.doneToday)).toBe(true)
+    })
+
+    it.each([
+      ['desfazer o primeiro', 'first'],
+      ['desfazer o segundo', 'second'],
+    ] as const)('confirmar A e B e %s preserva a outra confirmação, nota, XP, sequência e retrato', (_label, which) => {
+      const { data, a, b } = twoPending()
+      const original = data.records[D]!
+      const both = confirm(confirm(data, a), b)
+      expect(both.records[D]?.lateConfirmations?.map((c) => c.habitId)).toEqual([a, b])
+      expect(both.records[D]?.completedHabits).toBe(original.completedHabits + 2)
+
+      const [undo, keep] = which === 'first' ? [a, b] : [b, a]
+      const after = confirm(both, undo, false)
+      // Referência: só o hábito mantido confirmado, a partir do encerramento.
+      const reference = confirm(data, keep)
+
+      expect(withoutTimes(after)).toEqual(withoutTimes(reference))
+      expect(after.records[D]?.scoringSnapshot).toEqual(original.scoringSnapshot)
+      expect(after.records[D]?.lateConfirmations?.map((c) => c.habitId)).toEqual([keep])
+      expect(doneOn(after, keep)).toBe(true)
+      expect(doneOn(after, undo)).toBe(false)
+      expect(dayXp(after)).toBe(dayXp(reference))
+      expect(sumResource(after.ledger, 'xp')).toBe(sumResource(reference.ledger, 'xp'))
+      expect(sumResource(after.ledger, 'focus')).toBe(sumResource(reference.ledger, 'focus'))
+      expect(computeStreak(after.records, NEXT).current).toBe(computeStreak(reference.records, NEXT).current)
+      // O que ficou confirmado ainda pode ser desfeito; o desfeito pode ser confirmado de novo.
+      expect(cmd.confirmLateHabit(after, keep, D, NEXT, false).data).not.toBe(after)
+      expect(confirm(after, undo).records[D]?.score).toBe(both.records[D]?.score)
+    })
+
+    it('desfazer os dois (em qualquer ordem) volta exatamente ao encerramento', () => {
+      const { data, a, b } = twoPending()
+      const both = confirm(confirm(data, a), b)
+      for (const [x, y] of [[a, b], [b, a]] as const) {
+        const undone = confirm(confirm(both, x, false), y, false)
+        expect(undone.records[D]).toEqual(data.records[D])
+        expect(undone.logs).toEqual(data.logs)
+        expect(sumResource(undone.ledger, 'xp')).toBe(sumResource(data.ledger, 'xp'))
+        expect(sumResource(undone.ledger, 'focus')).toBe(sumResource(data.ledger, 'focus'))
+      }
+    })
+
+    it('remarcar a tarefa entre as confirmações não altera o resultado', () => {
+      const { data, a, b, taskId } = twoPending()
+      const reference = confirm(confirm(data, a), b)
+      const moved = cmd.updateTask(confirm(data, a), taskId, { title: 'Relatório', dueDate: '2026-10-08', priority: 'normal' })
+      const after = confirm(moved, b)
+      expect(after.records[D]?.score).toBe(reference.records[D]?.score)
+      expect(after.records[D]?.breakdown).toEqual(reference.records[D]?.breakdown)
+      expect(dayXp(after)).toBe(dayXp(reference))
+    })
+  })
 })
