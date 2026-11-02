@@ -22,6 +22,7 @@ import type { GoalProposal } from '@/domain/rules/habit-progression'
 import { eligibleLateHabitIds, isWithinLateWindow, lateConfirmationCandidates } from '@/domain/rules/late-confirmation'
 import { computePlayerStats } from '@/domain/rules/stats'
 import { computeStreak } from '@/domain/rules/streaks'
+import { strategyFor } from '@/domain/scoring'
 import type { AppData } from './app-data'
 import { commitSkillChanges, replaceLogPractices, type SkillFeedback } from './skill-sync'
 
@@ -446,6 +447,9 @@ function applyLateConfirmation(data: AppData, habitId: string, date: ISODate, to
   const record = data.records[date]
   const habit = data.habits.find((h) => h.id === habitId)
   if (!record || !habit) return null
+  // O dia é recalculado com a versão da nota que o encerrou, nunca com a ativa.
+  const strategy = strategyFor(record.breakdown?.version)
+  if (!strategy) return null
   const candidates = lateConfirmationCandidates(record, data.habits, indexLogs(data.logs), today)
   const log = data.logs.find((l) => l.habitId === habitId && l.date === date)
   const confirmations = record.lateConfirmations ?? []
@@ -468,7 +472,7 @@ function applyLateConfirmation(data: AppData, habitId: string, date: ISODate, to
   let next = written.data
   const overview = buildDayOverview({ date, habits: next.habits, logs: indexLogs(next.logs), tasks: next.tasks, record: null })
   const rescored: DailyRecord = {
-    ...createDailyRecord(overview, record.closedBy, record.closedAt),
+    ...createDailyRecord(overview, record.closedBy, record.closedAt, true, strategy),
     // A lista de elegíveis fica congelada como estava no encerramento.
     awaitingConfirmation: eligibleLateHabitIds(record, data.habits),
     ...(nextConfirmations.length ? { lateConfirmations: nextConfirmations } : {}),

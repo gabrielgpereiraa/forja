@@ -7,7 +7,7 @@ import type { ISODate } from '../date'
 import type { DailyRecord } from '../models/day'
 import type { Habit, HabitLog } from '../models/habit'
 import type { Task } from '../models/task'
-import { computeDayScore, type ScoreBreakdown } from '../scoring'
+import { computeDayScore, type ScoreBreakdown, type ScoringStrategy } from '../scoring'
 import { getHabitsForDay, type HabitDayState, type LogIndex } from './habit-schedule'
 import { getTasksForDay, type TaskDayItem } from './task-agenda'
 
@@ -98,9 +98,11 @@ export function createDailyRecord(
    * momento de confirmar, e o que ficou desmarcado conta como não cumprido.
    */
   lateWindow = true,
+  /** Estratégia da nota. Padrão: a ativa (encerramento). Recálculos passam a do registro. */
+  strategy?: ScoringStrategy,
 ): DailyRecord {
   const states = [...overview.plannedHabits, ...overview.optionalHabits]
-  const breakdown = computeDayScore({ date: overview.date, habits: states, tasks: overview.tasks })
+  const breakdown = computeDayScore({ date: overview.date, habits: states, tasks: overview.tasks }, strategy)
   return {
     date: overview.date,
     score: breakdown.score,

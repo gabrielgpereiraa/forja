@@ -7,6 +7,7 @@ import { buildDayOverview } from '@/domain/rules/day-overview'
 import { indexLogs } from '@/domain/rules/habit-schedule'
 import { habitsForMorningReview } from '@/domain/rules/late-confirmation'
 import { computeStreak } from '@/domain/rules/streaks'
+import { CURRENT_SCORING, SCORING_STRATEGIES, type ScoringStrategy } from '@/domain/scoring'
 import { createEmptyData, type AppData } from '../app-data'
 import * as cmd from '../commands'
 
@@ -180,6 +181,57 @@ describe('confirmação tardia', () => {
       const closed = cmd.closeDay(marked, D, 'user', NEXT).data
       expect(closed.records[D]?.completedHabits).toBe(2)
       expect(closed.records[D]?.awaitingConfirmation).toEqual([])
+    })
+  })
+
+  describe('versão da nota', () => {
+    /** Estratégia fictícia, só para provar qual versão o recálculo usa. */
+    const FAKE: ScoringStrategy = {
+      version: 'v-teste',
+      label: 'Estratégia de teste',
+      compute: () => ({ version: 'v-teste', score: 7.7, base: 7.7, components: [], adjustments: [], completion: 0.77, highlights: [] }),
+    }
+    function withVersion(data: AppData, version: string | undefined): AppData {
+      const record = data.records[D]!
+      const breakdown = { ...record.breakdown, version } as typeof record.breakdown
+      return { ...data, records: { ...data.records, [D]: { ...record, breakdown } } }
+    }
+
+    it('encerrar usa a estratégia ativa e grava a versão', () => {
+      const { data } = setup()
+      expect(data.records[D]?.breakdown.version).toBe(CURRENT_SCORING.version)
+    })
+
+    it('a confirmação recalcula com a versão do registro, não com a ativa', () => {
+      SCORING_STRATEGIES[FAKE.version] = FAKE
+      try {
+        const { data, sleepId } = setup()
+        const r = cmd.confirmLateHabit(withVersion(data, FAKE.version), sleepId, D, NEXT, true)
+        expect(CURRENT_SCORING.version).not.toBe(FAKE.version)
+        expect(r.data.records[D]?.breakdown.version).toBe(FAKE.version)
+        expect(r.data.records[D]?.score).toBe(7.7)
+        // Desfazer também usa a versão do registro.
+        const undone = cmd.confirmLateHabit(r.data, sleepId, D, NEXT, false)
+        expect(undone.data.records[D]?.breakdown.version).toBe(FAKE.version)
+      } finally {
+        delete SCORING_STRATEGIES[FAKE.version]
+      }
+    })
+
+    it('registro sem versão explícita é tratado como v1', () => {
+      const { data, sleepId } = setup()
+      const legacy = withVersion(data, undefined)
+      const r = cmd.confirmLateHabit(legacy, sleepId, D, NEXT, true)
+      expect(r.data.records[D]?.breakdown.version).toBe('v1')
+      expect(r.data.records[D]?.completedHabits).toBe(2)
+    })
+
+    it('versão desconhecida: a confirmação é recusada e nada muda', () => {
+      const { data, sleepId } = setup()
+      const unknown = withVersion(data, 'v99')
+      const r = cmd.confirmLateHabit(unknown, sleepId, D, NEXT, true)
+      expect(r.data).toBe(unknown)
+      expect(r.data.logs.some((l) => l.habitId === sleepId && l.date === D)).toBe(false)
     })
   })
 })

@@ -87,7 +87,7 @@ Daí saem estados claros e usados na UI:
 
 Componentes sem itens são ignorados (o peso é redistribuído). Ajustes: **+0,3** todos os hábitos do dia, **+0,25** por hábito extra (máx. 0,75), **+0,15** por tarefa adiantada (máx. 0,45), **−0,15** por tarefa atrasada pendente (máx. −0,45). Sem nada planejado (nenhum hábito obrigatório nem tarefa do dia/atrasada) → `score = null`, mesmo que haja hábitos extras ou tarefas adiantadas: extras mantêm só suas recompensas próprias (sessão, Foco, tarefa) e não geram nota, XP de nota nem sequência.
 
-Cada `DailyRecord` guarda o `breakdown` completo e a `version`, então a fórmula pode evoluir (`SCORING_STRATEGIES`) sem reescrever o histórico. Os pesos estão centralizados no objeto `V1`.
+Cada `DailyRecord` guarda o `breakdown` completo e a `version`, então a fórmula pode evoluir (`SCORING_STRATEGIES`) sem reescrever o histórico. Encerrar usa a estratégia ativa (`CURRENT_SCORING`); qualquer recálculo de dia encerrado (confirmação tardia) usa a estratégia da versão gravada (`strategyFor(breakdown.version)`), com registros sem versão tratados como `v1` e versão desconhecida bloqueando o recálculo. Os pesos estão centralizados no objeto `V1`.
 
 Faixas (`scoring/tiers.ts`): Lendário ≥ 9 · Ótimo ≥ 7,5 · Bom ≥ 6 · Regular ≥ 4 · Fraco < 4. A paleta é divergente (rosa ↔ cinza neutro ↔ rampa verde ordinal), validada para contraste e daltonismo.
 
