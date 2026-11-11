@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Link2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDownRight, ArrowRight, ArrowUpRight, Link2, Lock, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { HabitGlyph, habitColorStyle } from '@/components/appearance'
 import { ProgressBar } from '@/components/progress/progress-bar'
@@ -11,7 +11,7 @@ import { weeklyTrend } from '@/domain/skills/engine'
 import { useSkillViews } from '@/hooks/use-domain'
 import { useToday } from '@/hooks/use-today'
 import { cn, formatNumber } from '@/lib/utils'
-import { practiceLabel } from '@/services/skill-commands'
+import { isPracticeLocked, practiceLabel, PRACTICE_LOCKED_REASON } from '@/services/skill-commands'
 import { useAppStore } from '@/store/app-store'
 import { useUiStore } from '@/store/ui-store'
 import { SkillStatusChip } from './SkillCard'
@@ -28,6 +28,7 @@ export function SkillDetailModal() {
   const habits = useAppStore((s) => s.habits)
   const practices = useAppStore((s) => s.skillPractices)
   const removePractice = useAppStore((s) => s.removeSkillPractice)
+  const records = useAppStore((s) => s.records)
   const today = useToday()
   const views = useSkillViews(today)
   const view = views.find((v) => v.skill.id === skillId)
@@ -175,7 +176,12 @@ export function SkillDetailModal() {
                         {h ? `via ${h.name}${p.weight < 1 ? ` (${WEIGHT_LABEL(p.weight)})` : ''}` : 'Prática avulsa'}
                       </span>
                     </span>
-                    {!p.sourceLogId && (
+                    {!p.sourceLogId && isPracticeLocked(records, p, today) && (
+                      <span className="p-1.5 text-muted-foreground/60" title={PRACTICE_LOCKED_REASON} aria-label={PRACTICE_LOCKED_REASON}>
+                        <Lock className="size-3.5" />
+                      </span>
+                    )}
+                    {!p.sourceLogId && !isPracticeLocked(records, p, today) && (
                       <button
                         type="button"
                         aria-label="Remover prática"

@@ -122,7 +122,7 @@ export const useAppStore = create<AppState>()(
         },
         updateSkill: (id, input, links, today) => apply((d) => skills.setSkillLinks(skills.updateSkill(d, id, input), id, links, today)),
         setSkillArchived: (id, archived) => apply((d) => skills.setSkillArchived(d, id, archived)),
-        deleteSkill: (id) => apply((d) => skills.deleteSkill(d, id)),
+        deleteSkill: (id) => apply((d) => skills.deleteSkill(d, id, currentDay())),
         logSkillPractice: (id, input, date) => {
           const r = skills.logSkillPractice(dataOf(get()), id, input, date)
           set(r.data)

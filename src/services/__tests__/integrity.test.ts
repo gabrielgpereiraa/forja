@@ -2,12 +2,14 @@
  * Integridade do histórico: ações destrutivas não alteram dias encerrados.
  * (Encerramento definitivo — sem reabertura — está em commands.test.ts.)
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ISODate } from '@/domain/date'
 import { sumResource } from '@/domain/gamification/engine'
 import { isTaskDeleteLocked } from '@/domain/rules/task-agenda'
+import { replaySkill } from '@/domain/skills/engine'
 import { createEmptyData } from '../app-data'
 import * as cmd from '../commands'
+import * as sk from '../skill-commands'
 
 const D1: ISODate = '2026-10-05'
 const D2: ISODate = '2026-10-06'
@@ -65,5 +67,84 @@ describe('exclusão de tarefas e dias encerrados', () => {
     expect(cmd.deleteTask(data, id).removed).not.toBeNull()
     data = cmd.closeDay(data, D1, 'user').data
     expect(cmd.deleteTask(data, id).removed).toBeNull()
+  })
+})
+
+const SKILL = { name: 'Desenho', category: 'creative' as const, icon: 'guitar' as const, color: 'violet' as const, maintenancePerWeek: 2, sessionMinutes: 30 }
+
+/** Habilidade sem hábito vinculado + uma prática avulsa de 30 min em `date`. */
+function withLoosePractice(date: ISODate) {
+  const { data: d0, skill } = sk.createSkill(base(), SKILL, [], '2026-10-01')
+  const res = sk.logSkillPractice(d0, skill.id, { duration: 30 }, date)
+  expect(res.via).toBe('skill')
+  const practice = res.data.skillPractices[0]!
+  expect(practice.sourceLogId).toBeNull()
+  return { data: res.data, skill, practice }
+}
+
+describe('práticas e habilidades com histórico em dias encerrados', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('prática avulsa de dia encerrado não pode ser removida (Foco e progressão intactos)', () => {
+    let { data, practice } = withLoosePractice(D1)
+    data = cmd.closeDay(data, D1, 'user').data
+    expect(sumResource(data.ledger, 'focus')).toBe(30)
+    expect(sk.isPracticeLocked(data.records, practice, D2)).toBe(true)
+    expect(sk.removeSkillPractice(data, practice.id, D2)).toBe(data)
+    expect(sk.removeSkillPractice(data, practice.id, D1)).toBe(data) // registrada antes do encerramento
+  })
+
+  it('prática avulsa de dia aberto segue removível', () => {
+    const { data, practice } = withLoosePractice(D1)
+    const removed = sk.removeSkillPractice(data, practice.id, D1)
+    expect(removed.skillPractices).toHaveLength(0)
+    expect(sumResource(removed.ledger, 'focus')).toBe(0)
+  })
+
+  it('prática registrada depois do encerramento de hoje pode ser desfeita só no mesmo dia', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-05T22:00:00Z'))
+    const { data: d0, skill } = sk.createSkill(base(), SKILL, [], '2026-10-01')
+    const closed = cmd.closeDay(d0, D1, 'user').data
+    vi.setSystemTime(new Date('2026-10-05T23:00:00Z'))
+    const data = sk.logSkillPractice(closed, skill.id, { duration: 30 }, D1).data
+    const practice = data.skillPractices[0]!
+    expect(sk.isPracticeLocked(data.records, practice, D1)).toBe(false)
+    expect(sk.removeSkillPractice(data, practice.id, D1).skillPractices).toHaveLength(0)
+    // No dia seguinte, passa a ser histórico.
+    expect(sk.removeSkillPractice(data, practice.id, D2)).toBe(data)
+  })
+
+  it('habilidade com prática em dia encerrado não pode ser excluída; arquivar preserva tudo', () => {
+    let { data, skill } = withLoosePractice(D1)
+    data = cmd.closeDay(data, D1, 'user').data
+    expect(sk.skillHasClosedHistory(data, skill.id, D2)).toBe(true)
+    expect(sk.deleteSkill(data, skill.id, D2)).toBe(data)
+    expect(sk.deleteSkill(data, skill.id)).toBe(data) // sem `today`: também protegida
+    const before = replaySkill(data.skills[0]!, data.skillPractices, D2)
+    const archived = sk.setSkillArchived(data, skill.id, true)
+    expect(archived.skills[0]!.archived).toBe(true)
+    expect(archived.skillPractices).toEqual(data.skillPractices)
+    expect(archived.ledger).toEqual(data.ledger)
+    const after = replaySkill(archived.skills[0]!, archived.skillPractices, D2)
+    expect(after.experience).toBe(before.experience)
+    expect(after.level).toBe(before.level)
+  })
+
+  it('habilidade só com práticas de dia aberto segue excluível', () => {
+    const { data, skill } = withLoosePractice(D1)
+    const deleted = sk.deleteSkill(data, skill.id, D1)
+    expect(deleted.skills).toHaveLength(0)
+    expect(deleted.skillPractices).toHaveLength(0)
+    expect(sumResource(deleted.ledger, 'focus')).toBe(0)
+  })
+
+  it('prática vinda de hábito em dia encerrado também protege a habilidade', () => {
+    const b = cmd.createHabit(base(), { name: 'Desenhar', category: 'creative', icon: 'guitar', color: 'violet', schedule: { weeklyGoal: 3, days: null }, target: { amount: 30, unit: 'minutes' } }, '2026-10-01')
+    const { data: d0, skill } = sk.createSkill(b.data, SKILL, [{ habitId: b.habit.id, weight: 1 }], '2026-10-01')
+    let data = cmd.setHabitValue(d0, b.habit.id, D1, 30).data
+    data = cmd.closeDay(data, D1, 'user').data
+    expect(data.skillPractices[0]?.sourceLogId).not.toBeNull()
+    expect(sk.deleteSkill(data, skill.id, D2)).toBe(data)
   })
 })

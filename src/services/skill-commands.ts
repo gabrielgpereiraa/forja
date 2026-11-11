@@ -69,7 +69,34 @@ export function setSkillArchived(data: AppData, id: string, archived: boolean): 
   return { ...data, skills: data.skills.map((s) => (s.id === id ? { ...s, archived, updatedAt: nowTimestamp() } : s)) }
 }
 
-export function deleteSkill(data: AppData, id: string): AppData {
+/**
+ * Prática de um dia encerrado faz parte do histórico (Foco, nível, condição):
+ * não pode ser removida. Exceção: prática registrada depois do encerramento
+ * no próprio dia de hoje (ex.: "Desfazer" logo após registrar) — vale só até
+ * o dia acabar. Sem `today`, qualquer prática de dia encerrado é protegida.
+ */
+export function isPracticeLocked(
+  records: AppData['records'],
+  practice: Pick<SkillPractice, 'date' | 'createdAt'>,
+  today?: ISODate,
+): boolean {
+  const record = records[practice.date]
+  if (!record) return false
+  return !(today !== undefined && practice.date === today && practice.createdAt > record.closedAt)
+}
+
+/** Habilidade com prática protegida (dia encerrado): só pode ser arquivada. */
+export function skillHasClosedHistory(data: Pick<AppData, 'records' | 'skillPractices'>, skillId: string, today?: ISODate): boolean {
+  return data.skillPractices.some((p) => p.skillId === skillId && isPracticeLocked(data.records, p, today))
+}
+
+export const PRACTICE_LOCKED_REASON = 'Prática de um dia encerrado: faz parte do histórico e não pode ser removida.'
+export const SKILL_DELETE_LOCKED_REASON =
+  'Esta habilidade tem práticas em dias encerrados. Para preservar o histórico, ela não pode ser excluída — arquive para pausar sem perder nada.'
+
+export function deleteSkill(data: AppData, id: string, today?: ISODate): AppData {
+  // Com histórico em dia encerrado: nada muda (use o arquivamento).
+  if (skillHasClosedHistory(data, id, today)) return data
   const practiceKeys = new Set(data.skillPractices.filter((p) => p.skillId === id).map((p) => `skillPractice:${p.id}`))
   return {
     ...data,
@@ -177,6 +204,7 @@ function addStandalonePractice(data: AppData, skill: Skill, input: PracticeInput
 export function removeSkillPractice(data: AppData, practiceId: string, today: ISODate): AppData {
   const practice = data.skillPractices.find((p) => p.id === practiceId)
   if (!practice || practice.sourceLogId) return data
+  if (isPracticeLocked(data.records, practice, today)) return data
   const skill = data.skills.find((s) => s.id === practice.skillId)
   const remaining = data.skillPractices.filter((p) => p.id !== practiceId)
   const ledger = data.ledger.filter((e) => e.sourceKey !== `skillPractice:${practiceId}`)

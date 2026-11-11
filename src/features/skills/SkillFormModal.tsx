@@ -23,7 +23,7 @@ import { HABIT_CATEGORIES, HABIT_CATEGORY_IDS } from '@/domain/models/habit'
 import type { SkillInput } from '@/domain/models/skill'
 import { useToday } from '@/hooks/use-today'
 import { cn } from '@/lib/utils'
-import { CONTRIBUTION_WEIGHTS, type LinkInput } from '@/services/skill-commands'
+import { CONTRIBUTION_WEIGHTS, SKILL_DELETE_LOCKED_REASON, skillHasClosedHistory, type LinkInput } from '@/services/skill-commands'
 import { useAppStore } from '@/store/app-store'
 import { useUiStore } from '@/store/ui-store'
 import { toast } from 'sonner'
@@ -50,8 +50,11 @@ export function SkillFormModal() {
   const setArchived = useAppStore((s) => s.setSkillArchived)
   const deleteSkill = useAppStore((s) => s.deleteSkill)
   const today = useToday()
+  const records = useAppStore((s) => s.records)
+  const practices = useAppStore((s) => s.skillPractices)
 
   const editing = state.open && state.skillId ? skills.find((s) => s.id === state.skillId) ?? null : null
+  const deleteLocked = editing ? skillHasClosedHistory({ records, skillPractices: practices }, editing.id, today) : false
   const [form, setForm] = useState<SkillInput>(EMPTY)
   const [links, setLinks] = useState<Map<string, number>>(new Map())
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -125,11 +128,18 @@ export function SkillFormModal() {
                   {editing.archived ? <ArchiveRestore /> : <Archive />}
                   {editing.archived ? 'Reativar' : 'Arquivar'}
                 </Button>
-                <Button variant="ghost" className="flex-1 text-danger hover:text-danger" onClick={() => setConfirmDelete(true)}>
+                <Button
+                  variant="ghost"
+                  className="flex-1 text-danger hover:text-danger"
+                  disabled={deleteLocked}
+                  title={deleteLocked ? SKILL_DELETE_LOCKED_REASON : undefined}
+                  onClick={() => setConfirmDelete(true)}
+                >
                   <Trash2 /> Excluir
                 </Button>
               </div>
             )}
+            {editing && deleteLocked && <p className="text-center text-[12px] text-muted-foreground">{SKILL_DELETE_LOCKED_REASON}</p>}
           </>
         }
       >

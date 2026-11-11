@@ -148,6 +148,14 @@ Validadas na camada de serviços (não só na interface). O store passa o dia de
 - `setTaskCompleted`: não conclui tarefa num dia encerrado, não reabre tarefa concluída num dia encerrado (`isTaskLocked`, também usado pela aba Tarefas e pelo formulário) e, com `today`, só conclui em hoje (`canChangeTask`).
 - Sem `today` (dados de exemplo, testes de histórico) vale apenas o bloqueio de dia encerrado.
 
+### Exclusões que preservam o histórico
+
+Validadas nos serviços (a interface só reflete):
+
+- **Tarefa** concluída num dia encerrado não pode ser excluída (`isTaskDeleteLocked`); `deleteTask` devolve os dados intactos. Pendentes (inclusive atrasadas — o retrato do dia guarda só o id) e concluídas em dia aberto seguem excluíveis, com "Desfazer".
+- **Prática avulsa** de dia encerrado não pode ser removida (`isPracticeLocked`): o Foco, a condição e o nível ficam. Exceção: prática registrada depois do encerramento no próprio dia de hoje pode ser desfeita até o dia acabar.
+- **Habilidade** com prática em dia encerrado (avulsa ou vinda de hábito) não pode ser excluída (`skillHasClosedHistory`); o caminho é **arquivar** (`setSkillArchived`), que só marca a habilidade e preserva práticas, XP de nível e lançamentos.
+
 ### Confirmação tardia ("Confirmar na manhã seguinte")
 
 Dia encerrado **não é reaberto** e continua bloqueado (`setHabitValue` ignora datas com registro). A única exceção é controlada:
