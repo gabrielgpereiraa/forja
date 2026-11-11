@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import type { ISODate } from '@/domain/date'
 import { buildDayOverview } from '@/domain/rules/day-overview'
 import { indexLogs } from '@/domain/rules/habit-schedule'
+import { isTaskDeleteLocked, TASK_DELETE_LOCKED_REASON } from '@/domain/rules/task-agenda'
 import { useAppStore } from '@/store/app-store'
 import { formatAmount } from '@/features/habits/habit-format'
 import { formatNumber } from '@/lib/utils'
@@ -147,6 +148,12 @@ export function useTaskActions() {
 
   const remove = useCallback(
     (taskId: string) => {
+      const { tasks, records } = useAppStore.getState()
+      const task = tasks.find((t) => t.id === taskId)
+      if (task && isTaskDeleteLocked(task, records)) {
+        toast('Não é possível excluir', { description: TASK_DELETE_LOCKED_REASON })
+        return
+      }
       const removed = deleteTask(taskId)
       if (!removed) return
       toast('Tarefa excluída', {

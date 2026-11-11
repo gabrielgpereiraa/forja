@@ -89,3 +89,15 @@ export function isTaskLocked(task: Task, closedDays: { readonly [date: string]: 
   if (task.completed) return Boolean(task.completedOn && closedDays[task.completedOn])
   return Boolean(closedDays[date])
 }
+
+/**
+ * Tarefa concluída num dia encerrado faz parte do histórico (XP e registro do
+ * dia): não pode ser excluída. Pendentes — inclusive atrasadas — e concluídas
+ * em dia ainda aberto seguem excluíveis.
+ */
+export function isTaskDeleteLocked(task: Task, closedDays: { readonly [date: string]: unknown }): boolean {
+  return Boolean(task.completed && task.completedOn && closedDays[task.completedOn])
+}
+
+/** Motivo exibido quando a exclusão está bloqueada. */
+export const TASK_DELETE_LOCKED_REASON = 'Concluída em um dia encerrado: a tarefa faz parte do histórico e não pode ser excluída.'

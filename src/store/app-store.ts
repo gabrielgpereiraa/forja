@@ -110,7 +110,7 @@ export const useAppStore = create<AppState>()(
         setTaskCompleted: (id, completed, date) => run((d) => cmd.setTaskCompleted(d, id, completed, date, currentDay())),
         deleteTask: (id) => {
           const r = cmd.deleteTask(dataOf(get()), id)
-          set(r.data)
+          if (r.removed) set(r.data)
           return r.removed ? { task: r.removed, entries: r.entries } : null
         },
         restoreTask: (task, entries) => apply((d) => cmd.restoreTask(d, task, entries)),

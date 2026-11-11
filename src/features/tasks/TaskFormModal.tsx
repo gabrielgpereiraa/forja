@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import type { TaskInput } from '@/domain/models/task'
-import { isTaskLocked } from '@/domain/rules/task-agenda'
+import { isTaskDeleteLocked, isTaskLocked, TASK_DELETE_LOCKED_REASON } from '@/domain/rules/task-agenda'
 import { useToday } from '@/hooks/use-today'
 import { useAppStore } from '@/store/app-store'
 import { useUiStore } from '@/store/ui-store'
@@ -25,6 +25,7 @@ export function TaskFormModal() {
   const today = useToday()
 
   const editing = state.open && state.taskId ? tasks.find((t) => t.id === state.taskId) ?? null : null
+  const deleteLocked = editing ? isTaskDeleteLocked(editing, records) : false
   const [form, setForm] = useState<TaskInput>({ title: '', description: '', dueDate: today, priority: 'normal' })
 
   useEffect(() => {
@@ -73,6 +74,8 @@ export function TaskFormModal() {
               <Button
                 variant="ghost"
                 className="text-danger hover:text-danger"
+                disabled={deleteLocked}
+                title={deleteLocked ? TASK_DELETE_LOCKED_REASON : undefined}
                 onClick={() => {
                   remove(editing.id)
                   close()
@@ -82,6 +85,7 @@ export function TaskFormModal() {
               </Button>
             </div>
           )}
+          {deleteLocked && <p className="text-center text-[12px] text-muted-foreground">{TASK_DELETE_LOCKED_REASON}</p>}
         </>
       }
     >

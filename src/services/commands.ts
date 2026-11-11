@@ -14,7 +14,7 @@ import type { DailyRecord, LateConfirmation } from '@/domain/models/day'
 import type { Habit, HabitInput, HabitLog } from '@/domain/models/habit'
 import { createId } from '@/domain/models/ids'
 import type { Task, TaskInput } from '@/domain/models/task'
-import { isTaskLocked } from '@/domain/rules/task-agenda'
+import { isTaskDeleteLocked, isTaskLocked } from '@/domain/rules/task-agenda'
 import { buildDayOverview, createDailyRecord } from '@/domain/rules/day-overview'
 import { getWeekProgress, indexLogs, isSessionComplete, sessionTargetOf } from '@/domain/rules/habit-schedule'
 import { applyGoalChange, habitForDate } from '@/domain/rules/habit-goal-history'
@@ -380,6 +380,8 @@ export function canChangeTask(data: AppData, task: Task, completed: boolean, dat
 
 export function deleteTask(data: AppData, id: string): { data: AppData; removed: Task | null; entries: LedgerEntry[] } {
   const removed = data.tasks.find((t) => t.id === id) ?? null
+  // Concluída em dia encerrado: histórico preservado — nada muda.
+  if (!removed || isTaskDeleteLocked(removed, data.records)) return { data, removed: null, entries: [] }
   const key = `task:${id}`
   return {
     data: { ...data, tasks: data.tasks.filter((t) => t.id !== id), ledger: withoutSource(data.ledger, key) },
