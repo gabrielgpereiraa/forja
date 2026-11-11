@@ -60,7 +60,6 @@ export function TodayPage() {
   const today = useToday()
   const name = useAppStore((s) => s.profile.name)
   const habitCount = useAppStore((s) => s.habits.filter((h) => !h.archived).length)
-  const reopenDay = useAppStore((s) => s.reopenDay)
   const overview = useDayOverview(today)
   const yesterdayOverview = useDayOverview(addDays(today, -1))
   const pendingReview = usePendingReview(today)
@@ -164,7 +163,6 @@ export function TodayPage() {
           {closed && overview.record ? (
             <ClosedDayCard
               record={overview.record}
-              onReopen={() => reopenDay(today)}
               onPlanTomorrow={() => openTaskForm(null, { dueDate: addDays(today, 1) })}
             />
           ) : (

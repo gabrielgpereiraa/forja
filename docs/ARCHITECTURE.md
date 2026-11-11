@@ -133,7 +133,7 @@ Faixas (`scoring/tiers.ts`): Lendário ≥ 9 · Ótimo ≥ 7,5 · Bom ≥ 6 · R
 
 ### Encerramento do dia e revisão da manhã
 
-1. **Completar dia** (painel Hoje) grava o snapshot; o dia fica somente leitura até ser reaberto.
+1. **Completar dia** (painel Hoje) grava o snapshot; o dia fica somente leitura. O encerramento é **definitivo**: não existe reabertura (a única exceção é a confirmação tardia, abaixo).
 2. Se ontem ficou aberto e tinha algo planejado, ele **não** é fechado sozinho: o painel mostra o cartão **"Ontem ainda está aberto"**, com **somente** os hábitos marcados como *confirmar na manhã seguinte* (ex.: "Dormir até 23h"); hábitos comuns e tarefas pendentes não entram (`habitsForMorningReview`) — tarefas pendentes aparecem hoje como atrasadas. O que for marcado ali conta **para ontem** (`date = ontem`). Depois, **Encerrar ontem** grava a nota. Encerrar pela revisão é definitivo: hábitos com a flag que ficaram desmarcados contam como **não cumpridos** e não abrem a confirmação tardia (a revisão já era esse momento); o modal de encerramento avisa quais são.
 3. Dias anteriores a ontem — ou ontem vazio — são encerrados automaticamente ao abrir o app (`closedBy: 'auto'`). Ou seja: a janela de revisão vai até o fim do dia seguinte.
 4. Hábitos com `confirmNextDay` aparecem com o selo "Confirmar amanhã". Encerrar o dia sem marcá-los é normal: veja a confirmação tardia abaixo.
@@ -268,7 +268,7 @@ RLS em todas: `select/insert/update/delete` só quando `auth.uid() = user_id`; `
 
 ## 7. Estados cobertos
 
-Primeiro acesso (onboarding) · ontem aguardando revisão · sem hábitos (sugestões) · sem tarefas · dia em branco · dia não iniciado / em andamento / tudo feito (CTA destacado) / encerrado (somente leitura + reabrir) · hábito atrasado / em risco / adiantado / meta batida / excedida · tarefa atrasada (penalidade explicada) · sequência quebrada (aviso gentil, dispensável) · dia sem plano (neutro no calendário) · semana futura / passada · armazenamento indisponível (fallback em memória) · backup inválido.
+Primeiro acesso (onboarding) · ontem aguardando revisão · sem hábitos (sugestões) · sem tarefas · dia em branco · dia não iniciado / em andamento / tudo feito (CTA destacado) / encerrado (somente leitura) · hábito atrasado / em risco / adiantado / meta batida / excedida · tarefa atrasada (penalidade explicada) · sequência quebrada (aviso gentil, dispensável) · dia sem plano (neutro no calendário) · semana futura / passada · armazenamento indisponível (fallback em memória) · backup inválido.
 
 ## 8. UX e acessibilidade
 
@@ -276,4 +276,4 @@ Navegação inferior no celular, sidebar a partir de 768 px; bottom sheets no ce
 
 ## 9. Testes
 
-`npm test` cobre habilidades (evolução, manutenção, tolerância, fases de ferrugem, piso, maestria × retenção, recuperação, determinismo, vínculos com hábitos, prática avulsa, recompensas de nível), datas, ritmo de hábitos, agenda de tarefas, fórmula da nota, sequências, regras de XP, comandos (desfazer, meta semanal, encerrar/reabrir dia, auto-encerramento, confirmação tardia) e consistência dos dados de exemplo. `domain/__tests__/scoring-v2.test.ts` (casos numéricos e propriedades da v2, 500 planos aleatórios com semente fixa) e `services/__tests__/scoring-v2-app.test.ts` (ativação, início do dia, encerramento, confirmação tardia v1/v2, reversão, persistência, recompensas e ritmo) cobrem a nota v2. `services/__tests__/progression-spec.test.ts` reúne os testes de aceitação da especificação de progressão (Foco parcial, evolução proporcional, manutenção válida e independente do peso, nota de dias sem plano, dias encerrados, recompensas de nível na confirmação tardia, conquistas consolidadas e determinismo do replay).
+`npm test` cobre habilidades (evolução, manutenção, tolerância, fases de ferrugem, piso, maestria × retenção, recuperação, determinismo, vínculos com hábitos, prática avulsa, recompensas de nível), datas, ritmo de hábitos, agenda de tarefas, fórmula da nota, sequências, regras de XP, comandos (desfazer, meta semanal, encerrar dia (definitivo), auto-encerramento, confirmação tardia) e consistência dos dados de exemplo. `domain/__tests__/scoring-v2.test.ts` (casos numéricos e propriedades da v2, 500 planos aleatórios com semente fixa) e `services/__tests__/scoring-v2-app.test.ts` (ativação, início do dia, encerramento, confirmação tardia v1/v2, reversão, persistência, recompensas e ritmo) cobrem a nota v2. `services/__tests__/progression-spec.test.ts` reúne os testes de aceitação da especificação de progressão (Foco parcial, evolução proporcional, manutenção válida e independente do peso, nota de dias sem plano, dias encerrados, recompensas de nível na confirmação tardia, conquistas consolidadas e determinismo do replay).

@@ -53,7 +53,6 @@ export interface AppActions {
   removeSkillPractice: (practiceId: string, today: ISODate) => void
 
   closeDay: (date: ISODate) => cmd.Feedback
-  reopenDay: (date: ISODate) => void
   autoCloseMissedDays: (today: ISODate) => void
 
   loadDemo: (today: ISODate) => void
@@ -132,7 +131,6 @@ export const useAppStore = create<AppState>()(
         removeSkillPractice: (practiceId, today) => apply((d) => skills.removeSkillPractice(d, practiceId, today)),
 
         closeDay: (date) => run((d) => cmd.closeDay(d, date, 'user', currentDay())),
-        reopenDay: (date) => apply((d) => cmd.reopenDay(d, date)),
         autoCloseMissedDays: (today) => {
           const before = dataOf(get())
           const after = cmd.autoCloseMissedDays(before, today)

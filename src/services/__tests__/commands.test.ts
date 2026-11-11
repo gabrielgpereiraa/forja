@@ -47,15 +47,21 @@ describe('comandos', () => {
     expect(sumResource(full.data.ledger, 'focus')).toBe(30)
   })
 
-  it('encerrar dia grava snapshot, bloqueia edição e pode ser reaberto', () => {
+  it('encerrar dia grava snapshot e é definitivo (sem reabertura)', () => {
     let { data } = cmd.createTask(base(), { title: 'Limpar tênis', priority: 'normal', dueDate: TODAY }, TODAY)
-    data = cmd.setTaskCompleted(data, data.tasks[0]!.id, true, TODAY).data
+    const taskId = data.tasks[0]!.id
+    data = cmd.setTaskCompleted(data, taskId, true, TODAY).data
     const closed = cmd.closeDay(data, TODAY, 'user')
     expect(closed.data.records[TODAY]?.score).toBe(10)
     expect(closed.feedback.xp).toBe(100 + 10)
-    const reopened = cmd.reopenDay(closed.data, TODAY)
-    expect(reopened.records[TODAY]).toBeUndefined()
-    expect(sumResource(reopened.ledger, 'xp')).toBe(10)
+    // Não há comando de reabertura.
+    expect('reopenDay' in cmd).toBe(false)
+    // Encerrar de novo não regrava nem duplica recompensas.
+    const again = cmd.closeDay(closed.data, TODAY, 'user')
+    expect(again.data).toBe(closed.data)
+    // O dia segue travado: reabrir a tarefa ou registrar hábito não muda nada.
+    expect(cmd.setTaskCompleted(closed.data, taskId, false, TODAY).data).toBe(closed.data)
+    expect(sumResource(closed.data.ledger, 'xp')).toBe(10 + 100 + 10)
   })
 
   it('ontem com plano fica aberto para a revisão da manhã', () => {

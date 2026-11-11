@@ -506,13 +506,6 @@ function applyLateConfirmation(data: AppData, habitId: string, date: ISODate, to
   return { data: next, feedback }
 }
 
-export function reopenDay(data: AppData, date: ISODate): AppData {
-  if (!data.records[date]) return data
-  const records = { ...data.records }
-  delete records[date]
-  return { ...data, records, ledger: withoutSource(data.ledger, `day:${date}`) }
-}
-
 /**
  * Ontem fica aberto para a revisão da manhã (confirmar o que só dá para saber
  * depois, como "dormi até 23h") — exceto se não havia nada planejado.

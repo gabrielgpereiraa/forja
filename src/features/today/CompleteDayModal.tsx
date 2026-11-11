@@ -123,7 +123,7 @@ export function CompleteDayModal({
       open={open}
       onOpenChange={handleOpenChange}
       title={isYesterday ? 'Encerrar ontem' : 'Completar dia'}
-      description={isYesterday ? 'Confirme como foi ontem antes de registrar.' : 'Revise como foi o dia antes de registrar.'}
+      description={isYesterday ? 'Confirme como foi ontem antes de registrar. O encerramento é definitivo.' : 'Revise como foi o dia antes de registrar. O encerramento é definitivo.'}
       footer={
         <>
           <Button size="lg" onClick={confirm}>

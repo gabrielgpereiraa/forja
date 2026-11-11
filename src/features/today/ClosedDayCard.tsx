@@ -1,4 +1,4 @@
-import { CalendarCheck, RotateCcw } from 'lucide-react'
+import { CalendarCheck } from 'lucide-react'
 
 import { Surface } from '@/components/layout'
 import { ScorePill } from '@/components/score'
@@ -7,7 +7,8 @@ import type { DailyRecord } from '@/domain/models/day'
 import { ScoreBreakdownView } from '@/features/progress/ScoreBreakdownView'
 import { formatNumber } from '@/lib/utils'
 
-export function ClosedDayCard({ record, onReopen, onPlanTomorrow }: { record: DailyRecord; onReopen: () => void; onPlanTomorrow: () => void }) {
+/** Dia encerrado: somente leitura (o encerramento é definitivo; a exceção é a confirmação tardia, na tela Hoje de amanhã). */
+export function ClosedDayCard({ record, onPlanTomorrow }: { record: DailyRecord; onPlanTomorrow: () => void }) {
   return (
     <Surface className="overflow-hidden">
       <div className="flex items-start justify-between gap-4 p-4 sm:p-5">
@@ -37,9 +38,6 @@ export function ClosedDayCard({ record, onReopen, onPlanTomorrow }: { record: Da
       <div className="flex gap-2 border-t p-3">
         <Button variant="secondary" className="flex-1" onClick={onPlanTomorrow}>
           Planejar amanhã
-        </Button>
-        <Button variant="ghost" onClick={onReopen}>
-          <RotateCcw /> Reabrir
         </Button>
       </div>
     </Surface>
